@@ -1,0 +1,19 @@
+{
+  "name": "llm-hub",
+  "version": "0.1.0",
+  "description": "Lightweight LLM API gateway with hub-and-spoke IR architecture",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "wrangler deploy --minify src/index.ts",
+    "db:migrate": "wrangler d1 migrations apply llm-hub-db"
+  },
+  "dependencies": {
+    "hono": "^4.9.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20230518.0",
+    "typescript": "^5.3.0",
+    "wrangler": "^3.97.0"
+  }
+}
