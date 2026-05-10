@@ -7,7 +7,7 @@
 // Import converters to trigger registration
 import "./openai/converter";
 import "./deepseek/converter";
-import "./opencodego/converter";
+import "./anthropic/converter";
 
 // Export the registry for use elsewhere
 export { registry } from "../core/converter";
