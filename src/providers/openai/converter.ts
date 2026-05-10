@@ -20,18 +20,25 @@ import type {
 } from "../../core/ir";
 
 export class OpenAIConverter extends BaseConverter {
-  readonly providerId: string = "openai";
-  readonly providerName: string = "OpenAI";
+  readonly providerId: string;
+  readonly providerName: string;
+  readonly capabilities: ConverterCapabilities;
 
-  readonly capabilities: ConverterCapabilities = {
-    streaming: true,
-    tools: true,
-    vision: true,
-    systemMessages: true,
-    reasoning: false,
-    jsonMode: true,
-    maxContextLength: 128_000,
-  };
+  constructor(options: ConverterOptions = {}) {
+    super(options);
+    this.providerId = (options.providerId as string) || "openai";
+    this.providerName = (options.providerName as string) || "OpenAI";
+    this.capabilities = {
+      streaming: true,
+      tools: true,
+      vision: true,
+      systemMessages: true,
+      reasoning: false,
+      jsonMode: true,
+      maxContextLength: 128_000,
+      ...(options.capabilities as Partial<ConverterCapabilities> || {}),
+    };
+  }
 
   // ========================================================================
   // IR → OpenAI
@@ -340,18 +347,38 @@ export class OpenAIConverter extends BaseConverter {
   // ========================================================================
 
   getChatCompletionEndpoint(): string {
-    return `${this.options.baseUrl || "https://api.openai.com/v1"}/chat/completions`;
+    const base = (this.options.baseUrl as string) || "https://api.openai.com/v1";
+    const suffix = (this.options.chatEndpoint as string) || "/chat/completions";
+    return `${base.replace(/\/$/, "")}${suffix}`;
   }
 
   getHeaders(apiKey: string): Record<string, string> {
-    return {
-      "Authorization": `Bearer ${apiKey}`,
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
+    const authType = (this.options.authType as string) || "bearer";
+
+    switch (authType) {
+      case "bearer":
+        headers["Authorization"] = `Bearer ${apiKey}`;
+        break;
+      case "api-key":
+        headers["api-key"] = apiKey;
+        break;
+      case "x-api-key":
+        headers["x-api-key"] = apiKey;
+        break;
+    }
+
+    const extra = this.options.extraHeaders as Record<string, string> | undefined;
+    if (extra) Object.assign(headers, extra);
+
+    return headers;
   }
 
   getSupportedModels(): { id: string; name: string }[] {
-    return [
+    const models = this.options.models as { id: string; name: string }[] | undefined;
+    return models || [
       { id: "gpt-4o", name: "GPT-4o" },
       { id: "gpt-4o-mini", name: "GPT-4o Mini" },
       { id: "gpt-4-turbo", name: "GPT-4 Turbo" },

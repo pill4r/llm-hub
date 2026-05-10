@@ -16,7 +16,6 @@ import {
   saveProviderConfigs,
 } from "../lib/provider-config";
 import { registry } from "../core/converter";
-import { OpenAICompatibleConverter } from "../providers/openai-compatible/converter";
 
 const admin = new Hono<{ Bindings: { KV: KVNamespace } }>();
 

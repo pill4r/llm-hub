@@ -9,7 +9,6 @@ import "./openai/converter";
 import "./deepseek/converter";
 import "./anthropic/converter";
 import "./opencodego/converter";
-import "./openai-compatible/converter";
 
 // Export the registry for use elsewhere
 export { registry } from "../core/converter";

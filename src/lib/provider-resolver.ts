@@ -5,7 +5,7 @@
  */
 
 import { registry, type BaseConverter } from "../core/converter";
-import { OpenAICompatibleConverter } from "../providers/openai-compatible/converter";
+import { OpenAIConverter } from "../providers/openai/converter";
 import {
   parseProviderConfig,
   getDefaultCapabilities,
@@ -107,7 +107,7 @@ async function resolveDynamicProvider(
 function createConverterFromConfig(cfg: ProviderConfig): BaseConverter {
   switch (cfg.protocol) {
     case "openai-compatible": {
-      return new OpenAICompatibleConverter({
+      return new OpenAIConverter({
         providerId: cfg.providerId,
         providerName: cfg.displayName,
         baseUrl: cfg.baseUrl,
