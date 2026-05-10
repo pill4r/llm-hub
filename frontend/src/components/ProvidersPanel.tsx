@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select } from "@/components/ui/select"
 import { t } from "@/lib/i18n"
 import { apiFetch } from "@/lib/api"
-import { Plus, X, RefreshCw } from "lucide-react"
+import { Plus, X, RefreshCw, TestTube } from "lucide-react"
 
 interface Provider {
   id: string
@@ -62,6 +62,7 @@ export default function ProvidersPanel() {
   const [testResult, setTestResult] = useState("")
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null)
   const [detailProvider, setDetailProvider] = useState<Provider | null>(null)
+  const [modelTestStatus, setModelTestStatus] = useState<Record<string, "pending" | "ok" | "error">>({})
 
   const fetchProviders = useCallback(async () => {
     setLoading(true)
@@ -174,6 +175,37 @@ export default function ProvidersPanel() {
       }
     } catch (e: any) {
       setTestResult(t("test_failed", { error: e.message }))
+    }
+  }
+
+  async function testModel(modelId: string) {
+    setModelTestStatus((prev) => ({ ...prev, [modelId]: "pending" }))
+    try {
+      const body: any = {
+        apiKey: form.testApiKey,
+        config: {
+          id: form.id || "test",
+          name: form.name || "test",
+          protocol: form.protocol,
+          baseUrl: form.baseUrl,
+          authType: form.authType,
+          chatEndpoint: form.chatEndpoint || undefined,
+          models: [{ id: modelId, name: modelId }],
+          autoFetchModels: false,
+        }
+      }
+      const resp = await apiFetch("/admin/providers/test", {
+        method: "POST",
+        body: JSON.stringify(body),
+      })
+      const data = await resp.json()
+      if (data.result?.ok || data.connected) {
+        setModelTestStatus((prev) => ({ ...prev, [modelId]: "ok" }))
+      } else {
+        setModelTestStatus((prev) => ({ ...prev, [modelId]: "error" }))
+      }
+    } catch {
+      setModelTestStatus((prev) => ({ ...prev, [modelId]: "error" }))
     }
   }
 
@@ -310,14 +342,29 @@ export default function ProvidersPanel() {
               <p className="text-sm text-muted-foreground">{t("no_models") || "No models configured. Click Fetch Models to auto-discover or add manually."}</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {models.map((m, idx) => (
-                  <Badge key={m.id} variant="secondary" className="flex items-center gap-1 px-2 py-1">
-                    {m.name}
-                    <button onClick={() => removeModel(idx)} className="ml-1 rounded-full hover:bg-destructive/20">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
+                {models.map((m, idx) => {
+                  const status = modelTestStatus[m.id]
+                  return (
+                    <Badge
+                      key={m.id}
+                      variant={status === "error" ? "destructive" : status === "ok" ? "default" : "secondary"}
+                      className="flex items-center gap-1 px-2 py-1"
+                    >
+                      {m.name}
+                      <button
+                        onClick={() => testModel(m.id)}
+                        disabled={status === "pending" || !form.testApiKey}
+                        className="ml-1 rounded-full p-0.5 hover:bg-primary/20 disabled:opacity-50"
+                        title="Test this model"
+                      >
+                        <TestTube className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => removeModel(idx)} className="rounded-full p-0.5 hover:bg-destructive/20">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )
+                })}
               </div>
             )}
 
