@@ -20,8 +20,8 @@ import type {
 } from "../../core/ir";
 
 export class OpenAIConverter extends BaseConverter {
-  readonly providerId = "openai";
-  readonly providerName = "OpenAI";
+  readonly providerId: string = "openai";
+  readonly providerName: string = "OpenAI";
 
   readonly capabilities: ConverterCapabilities = {
     streaming: true,

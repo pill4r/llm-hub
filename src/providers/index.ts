@@ -8,6 +8,7 @@
 import "./openai/converter";
 import "./deepseek/converter";
 import "./anthropic/converter";
+import "./opencodego/converter";
 
 // Export the registry for use elsewhere
 export { registry } from "../core/converter";
