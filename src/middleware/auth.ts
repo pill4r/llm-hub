@@ -32,12 +32,18 @@ export interface KeyRecord {
 }
 
 export interface ProviderKeyRecord {
-  /** Provider ID */
-  providerId: string;
-  /** Provider API Key */
+  /** Provider ID (optional when used in context where provider is already known) */
+  providerId?: string;
+  /** Provider API Key (single key) */
   apiKey: string;
   /** Base URL override */
   baseUrl?: string;
+  /** Multiple keys for load balancing */
+  keys?: Array<{
+    apiKey: string;
+    baseUrl?: string;
+    weight?: number;
+  }>;
 }
 
 /**
@@ -86,7 +92,8 @@ export async function validateKey(
   if (pkJson) {
     const pkList = JSON.parse(pkJson) as ProviderKeyRecord[];
     for (const pk of pkList) {
-      providerKeys[pk.providerId] = pk;
+      const pid = pk.providerId || "unknown";
+      providerKeys[pid] = pk;
     }
   }
 

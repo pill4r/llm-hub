@@ -2,8 +2,8 @@
  * LLM-Hub - Main Entry Point
  *
  * Cloudflare Workers gateway with hub-and-spoke IR architecture.
- * Supports both OpenAI (/v1/chat/completions) and Anthropic (/v1/messages)
- * consumer-facing APIs, routing to any configured provider.
+ * Consumer plugins: OpenAI, Anthropic (extensible)
+ * Provider plugins: OpenAI, DeepSeek, Anthropic (extensible)
  */
 
 import { Hono } from "hono";
@@ -11,22 +11,15 @@ import { stream } from "hono/streaming";
 import { authMiddleware } from "./middleware/auth";
 import { rateLimitMiddleware } from "./middleware/rate-limiter";
 import { billingMiddleware } from "./middleware/billing";
-import {
-  buildIRRequest,
-  buildIRRequestFromAnthropic,
-  buildOpenAIResponse,
-  buildAnthropicResponse,
-  buildAnthropicError,
-  buildOpenAIStreamChunk,
-  buildAnthropicStreamChunk,
-  forwardToProvider,
-  resolveTarget,
-  streamEventsFromProvider,
-} from "./core/gateway";
+import { forwardToProvider, resolveTarget, streamEventsFromProvider } from "./core/gateway";
 import { registry } from "./core/converter";
 import type { BaseConverter } from "./core/converter";
 import type { KeyRecord, ProviderKeyRecord } from "./middleware/auth";
-import type { StreamEvent } from "./core/ir";
+import { consumerRegistry } from "./consumers";
+import type { ConsumerPlugin } from "./consumers";
+import { detectClient } from "./lib/client-detector";
+import { LoadBalancer, parseProviderKeys } from "./lib/load-balancer";
+
 import "./providers";
 
 const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
@@ -38,7 +31,7 @@ const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
 app.use("*", async (c, next) => {
   c.header("Access-Control-Allow-Origin", "*");
   c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  c.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version");
+  c.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version, x-hub-provider, user-agent");
   if (c.req.method === "OPTIONS") return c.body(null, 204);
   await next();
 });
@@ -50,8 +43,9 @@ app.use("*", async (c, next) => {
 app.get("/", (c) =>
   c.json({
     name: "llm-hub",
-    version: "0.1.1",
-    supportedFormats: registry.list(),
+    version: "0.1.2",
+    consumers: consumerRegistry.list(),
+    providers: registry.list(),
   })
 );
 
@@ -75,47 +69,150 @@ app.get("/v1/models", authMiddleware(), async (c) => {
 });
 
 // ========================================================================
-// Shared request handler
+// Universal API route - handles all consumer formats
 // ========================================================================
 
-interface HandleRequestOptions {
-  c: any; // Hono Context
-  body: Record<string, unknown>;
-  consumerFormat: "openai" | "anthropic";
+app.post("/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), async (c) => {
+  const path = c.req.path;
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
+
+  // Detect consumer format
+  const consumer = consumerRegistry.find(path, c.req.raw.headers, body);
+  if (!consumer) {
+    return c.json({ error: { message: `Unsupported endpoint: ${path}`, type: "not_found" } }, 404);
+  }
+
+  // Detect client (Claude Code, Codex, etc.)
+  const client = detectClient(c.req.raw.headers);
+  c.set("client", client);
+
+  // Parse consumer request to IR
+  const irRequest = consumer.parseRequest(body);
+  const model = consumer.getModel(body);
+
+  // Resolve provider
+  const resolved = await resolveProvider(c, model);
+  if (!resolved.ok) return resolved.response;
+
+  const { converter, providerKeyRecord, providerId } = resolved;
+
+  // Override model if provider prefix was stripped
+  irRequest.model = resolved.model || irRequest.model;
+
+  // Override base URL if configured
+  if (providerKeyRecord.baseUrl) {
+    converter.options.baseUrl = providerKeyRecord.baseUrl;
+  }
+
+  // Forward to provider
+  const providerResponse = await forwardToProvider(converter, irRequest, providerKeyRecord.apiKey);
+
+  if (!providerResponse.ok) {
+    const errBody = await providerResponse.json().catch(() => ({}));
+    const err = converter.parseError(errBody);
+    return c.json(consumer.buildError(err), providerResponse.status as 400 | 401 | 429 | 500);
+  }
+
+  // Streaming
+  if (consumer.isStreaming(body) && converter.capabilities.streaming) {
+    c.header("Content-Type", "text/event-stream");
+    c.header("Cache-Control", "no-cache");
+    c.header("Connection", "keep-alive");
+
+    return stream(c, async (s) => {
+      const streamId = `${consumer.id}_${crypto.randomUUID()}`;
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
+
+      try {
+        for await (const { event } of streamEventsFromProvider(converter, providerResponse)) {
+          if (!event) continue;
+
+          if (event.type === "usage") {
+            totalPromptTokens = event.usage.promptTokens;
+            totalCompletionTokens = event.usage.completionTokens;
+          }
+
+          const chunk = consumer.buildStreamChunk(event, {
+            model: irRequest.model,
+            id: streamId,
+          });
+          if (chunk) {
+            await s.write(chunk);
+          }
+        }
+
+        // Consumer-specific end signal
+        if (consumer.id === "openai") {
+          await s.write("data: [DONE]\n\n");
+        } else if (consumer.id === "anthropic") {
+          await s.write(`event: message_stop\ndata: {"type":"message_stop"}\n\n`);
+        }
+
+        c.set("usage", {
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          totalTokens: totalPromptTokens + totalCompletionTokens,
+        });
+      } catch (err) {
+        const errorChunk = consumer.buildError({
+          message: String(err),
+          type: "stream_error",
+        });
+        await s.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
+      }
+    });
+  }
+
+  // Non-streaming
+  const responseBody = await providerResponse.json();
+  const irResponse = converter.responseFromProvider(responseBody);
+
+  if (irResponse.usage) {
+    c.set("usage", irResponse.usage);
+  } else {
+    c.set("usage", { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+  }
+
+  return c.json(consumer.buildResponse(irResponse));
+});
+
+// ========================================================================
+// Provider resolution with load balancing
+// ========================================================================
+
+interface ResolveError {
+  ok: false;
+  response: Response;
 }
 
-async function resolveProvider(
-  c: any,
-  body: Record<string, unknown>
-): Promise<
-  | { ok: false; response: Response }
-  | {
-      ok: true;
-      converter: BaseConverter;
-      providerKeyRecord: ProviderKeyRecord;
-      providerId: string;
-      model: string;
-    }
-> {
+interface ResolveSuccess {
+  ok: true;
+  converter: BaseConverter;
+  providerKeyRecord: ProviderKeyRecord;
+  providerId: string;
+  model: string;
+}
+
+type ResolveResult = ResolveError | ResolveSuccess;
+
+async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
   const keyRecord = c.get("keyRecord") as KeyRecord;
   const providerKeys = c.get("providerKeys") as Record<string, ProviderKeyRecord>;
 
-  const { providerId, model } = resolveTarget(c.req.raw.headers, String(body.model || ""));
+  const { providerId, model: resolvedModel } = resolveTarget(c.req.raw.headers, model);
 
   // Check provider permission
   if (keyRecord.allowedProviders.length > 0 && !keyRecord.allowedProviders.includes(providerId)) {
     return {
       ok: false,
-      response: c.json(
-        {
-          error: {
-            message: `Provider "${providerId}" not allowed for this key`,
-            type: "auth_error",
-            code: "provider_denied",
-          },
+      response: c.json({
+        error: {
+          message: `Provider "${providerId}" not allowed for this key`,
+          type: "auth_error",
+          code: "provider_denied",
         },
-        403
-      ),
+      }, 403),
     };
   }
 
@@ -124,261 +221,81 @@ async function resolveProvider(
   if (!ConverterClass) {
     return {
       ok: false,
-      response: c.json(
-        {
-          error: {
-            message: `Unknown provider "${providerId}"`,
-            type: "invalid_request_error",
-            code: "unknown_provider",
-          },
+      response: c.json({
+        error: {
+          message: `Unknown provider "${providerId}"`,
+          type: "invalid_request_error",
+          code: "unknown_provider",
         },
-        400
-      ),
+      }, 400),
     };
   }
   const converter = new ConverterClass() as BaseConverter;
 
-  // Get provider API key
-  const providerKeyRecord = providerKeys[providerId];
-  if (!providerKeyRecord) {
+  // Get provider API key (with load balancing)
+  const keyData = providerKeys[providerId];
+  if (!keyData) {
     return {
       ok: false,
-      response: c.json(
-        {
-          error: {
-            message: `No API key configured for provider "${providerId}"`,
-            type: "auth_error",
-            code: "missing_provider_key",
-          },
+      response: c.json({
+        error: {
+          message: `No API key configured for provider "${providerId}"`,
+          type: "auth_error",
+          code: "missing_provider_key",
         },
-        400
-      ),
+      }, 400),
     };
   }
 
-  // Override base URL if configured
-  if (providerKeyRecord.baseUrl) {
-    converter.options.baseUrl = providerKeyRecord.baseUrl;
+  // Parse provider key config (single or load-balanced)
+  const keyConfig = parseProviderKeys(keyData as unknown as Record<string, unknown>);
+  let providerKeyRecord: ProviderKeyRecord;
+
+  if (keyConfig instanceof LoadBalancer) {
+    const slot = keyConfig.next();
+    if (!slot) {
+      return {
+        ok: false,
+        response: c.json({
+          error: {
+            message: `All keys for provider "${providerId}" are unhealthy`,
+            type: "service_error",
+            code: "all_keys_unhealthy",
+          },
+        }, 503),
+      };
+    }
+    providerKeyRecord = { apiKey: slot.apiKey, baseUrl: slot.baseUrl };
+  } else {
+    providerKeyRecord = { apiKey: keyConfig!.apiKey, baseUrl: keyConfig!.baseUrl };
   }
 
   // Check model permission
-  const actualModel = String(body.model || "");
   if (keyRecord.allowedModels.length > 0) {
-    const fullModel = `${providerId}:${actualModel}`;
-    if (!keyRecord.allowedModels.includes(fullModel) && !keyRecord.allowedModels.includes(actualModel)) {
+    const fullModel = `${providerId}:${resolvedModel}`;
+    if (!keyRecord.allowedModels.includes(fullModel) && !keyRecord.allowedModels.includes(resolvedModel)) {
       return {
         ok: false,
-        response: c.json(
-          {
-            error: {
-              message: `Model "${actualModel}" not allowed for this key`,
-              type: "auth_error",
-              code: "model_denied",
-            },
+        response: c.json({
+          error: {
+            message: `Model "${resolvedModel}" not allowed for this key`,
+            type: "auth_error",
+            code: "model_denied",
           },
-          403
-        ),
+        }, 403),
       };
     }
   }
 
   // Set context for billing
   c.set("providerId", providerId);
-  c.set("model", actualModel);
+  c.set("model", resolvedModel);
 
-  return { ok: true, converter, providerKeyRecord, providerId, model };
+  return { ok: true, converter, providerKeyRecord, providerId, model: resolvedModel };
 }
 
 // ========================================================================
-// Chat Completions (OpenAI-compatible consumer)
-// ========================================================================
-
-app.post("/v1/chat/completions",
-  authMiddleware(),
-  rateLimitMiddleware(),
-  billingMiddleware(),
-  async (c) => {
-    const body = await c.req.json<Record<string, unknown>>();
-
-    const resolved = await resolveProvider(c, body);
-    if (!resolved.ok) return resolved.response;
-
-    const { converter, providerKeyRecord, providerId, model } = resolved;
-
-    // Build IR request
-    const irRequest = buildIRRequest(body);
-    irRequest.model = model || irRequest.model;
-
-    // Forward to provider
-    const providerResponse = await forwardToProvider(converter, irRequest, providerKeyRecord.apiKey);
-
-    if (!providerResponse.ok) {
-      const errBody = await providerResponse.json().catch(() => ({}));
-      const err = converter.parseError(errBody);
-      return c.json({
-        error: { message: err.message, type: err.type, code: err.code },
-      }, providerResponse.status as 400 | 401 | 429 | 500);
-    }
-
-    // Streaming
-    if (body.stream && converter.capabilities.streaming) {
-      c.header("Content-Type", "text/event-stream");
-      c.header("Cache-Control", "no-cache");
-      c.header("Connection", "keep-alive");
-
-      return stream(c, async (s) => {
-        const completionId = `chatcmpl-${crypto.randomUUID()}`;
-        let totalPromptTokens = 0;
-        let totalCompletionTokens = 0;
-
-        try {
-          for await (const { event } of streamEventsFromProvider(converter, providerResponse)) {
-            if (!event) continue;
-
-            // Track usage
-            if (event.type === "usage") {
-              totalPromptTokens = event.usage.promptTokens;
-              totalCompletionTokens = event.usage.completionTokens;
-            }
-
-            const chunk = buildOpenAIStreamChunk(event, irRequest.model, completionId);
-            if (chunk) {
-              await s.write(`data: ${JSON.stringify(chunk)}\n\n`);
-            }
-          }
-
-          // Store usage for billing
-          c.set("usage", {
-            promptTokens: totalPromptTokens,
-            completionTokens: totalCompletionTokens,
-            totalTokens: totalPromptTokens + totalCompletionTokens,
-          });
-        } catch (err) {
-          await s.write(`data: ${JSON.stringify({ error: { message: String(err), type: "stream_error" } })}\n\n`);
-        } finally {
-          await s.write("data: [DONE]\n\n");
-        }
-      });
-    }
-
-    // Non-streaming
-    const responseBody = await providerResponse.json();
-    const irResponse = converter.responseFromProvider(responseBody);
-
-    if (irResponse.usage) {
-      c.set("usage", irResponse.usage);
-    } else {
-      c.set("usage", { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
-    }
-
-    return c.json(buildOpenAIResponse(irResponse));
-  }
-);
-
-// ========================================================================
-// Messages (Anthropic-compatible consumer)
-// ========================================================================
-
-app.post("/v1/messages",
-  authMiddleware(),
-  rateLimitMiddleware(),
-  billingMiddleware(),
-  async (c) => {
-    const body = await c.req.json<Record<string, unknown>>();
-
-    // Anthropic uses "model" field same as OpenAI
-    const resolved = await resolveProvider(c, body);
-    if (!resolved.ok) {
-      // Return Anthropic-format error
-      const err = await resolved.response.json().catch(() => ({
-        error: { message: "Unknown error", type: "api_error" },
-      }));
-      return c.json(buildAnthropicError(err.error?.message || "Unknown error", err.error?.type || "api_error"), resolved.response.status);
-    }
-
-    const { converter, providerKeyRecord, providerId, model } = resolved;
-
-    // Build IR request from Anthropic format
-    const irRequest = buildIRRequestFromAnthropic(body);
-    irRequest.model = model || irRequest.model;
-
-    // Forward to provider
-    const providerResponse = await forwardToProvider(converter, irRequest, providerKeyRecord.apiKey);
-
-    if (!providerResponse.ok) {
-      const errBody = await providerResponse.json().catch(() => ({}));
-      const err = converter.parseError(errBody);
-      return c.json(buildAnthropicError(err.message, err.type || "api_error"), providerResponse.status as 400 | 401 | 429 | 500);
-    }
-
-    // Streaming
-    if (body.stream && converter.capabilities.streaming) {
-      c.header("Content-Type", "text/event-stream");
-      c.header("Cache-Control", "no-cache");
-      c.header("Connection", "keep-alive");
-
-      return stream(c, async (s) => {
-        const msgId = `msg_${crypto.randomUUID().replace(/-/g, "")}`;
-        let totalPromptTokens = 0;
-        let totalCompletionTokens = 0;
-        let hasStarted = false;
-
-        try {
-          for await (const { event } of streamEventsFromProvider(converter, providerResponse)) {
-            if (!event) continue;
-
-            if (event.type === "stream_start" && !hasStarted) {
-              hasStarted = true;
-              const startChunk = buildAnthropicStreamChunk(
-                { type: "stream_start", id: msgId, model: irRequest.model },
-                irRequest.model
-              );
-              if (startChunk) await s.write(startChunk);
-            }
-
-            // Track usage
-            if (event.type === "usage") {
-              totalPromptTokens = event.usage.promptTokens;
-              totalCompletionTokens = event.usage.completionTokens;
-            }
-
-            const chunk = buildAnthropicStreamChunk(event, irRequest.model);
-            if (chunk) {
-              await s.write(chunk);
-            }
-          }
-
-          // End signal
-          await s.write(`event: message_stop\ndata: {"type":"message_stop"}\n\n`);
-
-          // Store usage for billing
-          c.set("usage", {
-            promptTokens: totalPromptTokens,
-            completionTokens: totalCompletionTokens,
-            totalTokens: totalPromptTokens + totalCompletionTokens,
-          });
-        } catch (err) {
-          await s.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "stream_error", message: String(err) } })}\n\n`);
-        }
-      });
-    }
-
-    // Non-streaming
-    const responseBody = await providerResponse.json();
-    const irResponse = converter.responseFromProvider(responseBody);
-
-    if (irResponse.usage) {
-      c.set("usage", irResponse.usage);
-    } else {
-      c.set("usage", { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
-    }
-
-    return c.json(buildAnthropicResponse(irResponse));
-  }
-);
-
-// ========================================================================
-// Admin API (for frontend management)
+// Admin API
 // ========================================================================
 
 app.get("/admin/usage", authMiddleware(), async (c) => {

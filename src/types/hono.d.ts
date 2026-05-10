@@ -11,6 +11,7 @@ declare module "hono" {
     providerId: string;
     model: string;
     usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+    client: string;
   }
 }
 
