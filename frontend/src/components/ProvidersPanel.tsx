@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select } from "@/components/ui/select"
 import { t } from "@/lib/i18n"
 import { apiFetch } from "@/lib/api"
-import { Plus, X, RefreshCw, TestTube } from "lucide-react"
+import { Plus, X, RefreshCw, TestTube, Trash2 } from "lucide-react"
 
 interface Provider {
   id: string
@@ -63,6 +63,7 @@ export default function ProvidersPanel() {
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null)
   const [detailProvider, setDetailProvider] = useState<Provider | null>(null)
   const [modelTestStatus, setModelTestStatus] = useState<Record<string, "pending" | "ok" | "error">>({})
+  const [modelLatency, setModelLatency] = useState<Record<string, number>>({})
 
   const fetchProviders = useCallback(async () => {
     setLoading(true)
@@ -199,8 +200,10 @@ export default function ProvidersPanel() {
         body: JSON.stringify(body),
       })
       const data = await resp.json()
+      const latency = data.result?.latencyMs || data.latency || 0
       if (data.result?.ok || data.connected) {
         setModelTestStatus((prev) => ({ ...prev, [modelId]: "ok" }))
+        setModelLatency((prev) => ({ ...prev, [modelId]: latency }))
       } else {
         setModelTestStatus((prev) => ({ ...prev, [modelId]: "error" }))
       }
@@ -341,28 +344,63 @@ export default function ProvidersPanel() {
             {models.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("no_models") || "No models configured. Click Fetch Models to auto-discover or add manually."}</p>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
                 {models.map((m, idx) => {
                   const status = modelTestStatus[m.id]
+                  const latency = modelLatency[m.id]
+                  const borderColor = status === "ok"
+                    ? "border-green-500/40"
+                    : status === "error"
+                    ? "border-red-500/40"
+                    : "border-border"
+                  const bgColor = status === "ok"
+                    ? "bg-green-500/5"
+                    : status === "error"
+                    ? "bg-red-500/5"
+                    : "bg-card"
+
                   return (
-                    <Badge
+                    <div
                       key={m.id}
-                      variant={status === "error" ? "destructive" : status === "ok" ? "default" : "secondary"}
-                      className="flex items-center gap-1 px-2 py-1"
+                      className={`flex items-center justify-between rounded-lg border ${borderColor} ${bgColor} px-3 py-2.5 transition-colors`}
                     >
-                      {m.name}
-                      <button
-                        onClick={() => testModel(m.id)}
-                        disabled={status === "pending" || !form.testApiKey}
-                        className="ml-1 rounded-full p-0.5 hover:bg-primary/20 disabled:opacity-50"
-                        title="Test this model"
-                      >
-                        <TestTube className="h-3 w-3" />
-                      </button>
-                      <button onClick={() => removeModel(idx)} className="rounded-full p-0.5 hover:bg-destructive/20">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{m.name}</div>
+                        <div className="text-xs text-muted-foreground">{m.id}</div>
+                        {status === "ok" && latency > 0 && (
+                          <div className="text-xs text-green-400">{latency}ms</div>
+                        )}
+                      </div>
+                      <div className="ml-2 flex items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          onClick={() => testModel(m.id)}
+                          disabled={status === "pending" || !form.testApiKey}
+                          title="Test"
+                        >
+                          {status === "pending" ? (
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          ) : status === "ok" ? (
+                            <TestTube className="h-3.5 w-3.5 text-green-400" />
+                          ) : status === "error" ? (
+                            <TestTube className="h-3.5 w-3.5 text-red-400" />
+                          ) : (
+                            <TestTube className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeModel(idx)}
+                          title="Remove"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
                   )
                 })}
               </div>
@@ -384,9 +422,6 @@ export default function ProvidersPanel() {
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Button onClick={handleSave}>{t("save_btn")}</Button>
-            <Button variant="outline" onClick={handleTest} disabled={!form.baseUrl || !form.testApiKey}>
-              {t("test_btn")}
-            </Button>
             {editing && (
               <Button variant="ghost" onClick={resetForm}>
                 Cancel
