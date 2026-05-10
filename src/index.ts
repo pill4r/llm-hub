@@ -24,7 +24,7 @@ const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
 app.get("/", (c) =>
   c.json({
     name: "llm-hub",
-    version: "0.1.0",
+    version: "0.1.1",
     providers: registry.list(),
   })
 );
