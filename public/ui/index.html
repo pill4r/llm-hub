@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM-Hub Admin</title>
+<style>
+:root{--bg:#0f0f23;--surface:#1a1a2e;--surface2:#252542;--border:#2d2d5a;--text:#e0e0ff;--text2:#8888bb;--accent:#6366f1;--accent2:#8b5cf6;--success:#22c55e;--danger:#ef4444;--warning:#f59e0b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+header h1{font-size:20px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+header .version{font-size:12px;color:var(--text2);margin-left:8px}
+header .user{display:flex;align-items:center;gap:12px}
+header .user span{font-size:14px;color:var(--text2)}
+header button{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;transition:.2s}
+header button:hover{background:var(--accent);border-color:var(--accent)}
+.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.login-box{width:100%;max-width:400px;padding:32px;background:var(--surface);border-radius:16px;border:1px solid var(--border)}
+.login-box h2{margin-bottom:8px;font-size:22px}
+.login-box p{color:var(--text2);margin-bottom:24px;font-size:14px}
+.login-box input{width:100%;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:12px;outline:none}
+.login-box input:focus{border-color:var(--accent)}
+.login-box button{width:100%;padding:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:15px;transition:.2s}
+.login-box button:hover{opacity:.9;transform:translateY(-1px)}
+.login-box .error{color:var(--danger);font-size:13px;margin-top:12px;display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-top:20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+.card h3{font-size:15px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card h3 .icon{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.card .value{font-size:32px;font-weight:700;margin-bottom:4px}
+.card .label{font-size:13px;color:var(--text2)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+table th{text-align:left;padding:12px 16px;color:var(--text2);font-weight:500;border-bottom:1px solid var(--border);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+table td{padding:12px 16px;border-bottom:1px solid var(--border)}
+table tr:hover td{background:var(--surface2)}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;background:var(--surface2)}
+.badge.ok{color:var(--success);background:rgba(34,197,94,.15)}
+.badge.warn{color:var(--warning);background:rgba(245,158,11,.15)}
+.provider-row{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.provider-row:last-child{border-bottom:none}
+.provider-row .icon{width:36px;height:36px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:16px}
+.provider-row .info{flex:1}
+.provider-row .info .name{font-weight:600;font-size:14px}
+.provider-row .info .meta{font-size:12px;color:var(--text2);margin-top:2px}
+.provider-row .status{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.tabs{display:flex;gap:4px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border)}
+.tab{padding:12px 20px;font-size:14px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:.2s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);border-color:var(--accent);font-weight:600}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.empty{text-align:center;padding:40px;color:var(--text2);font-size:14px}
+.loading{animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@media(max-width:768px){.grid{grid-template-columns:1fr}header{padding:12px 16px}header h1{font-size:16px}.container{padding:12px}}
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <h2>🤖 LLM-Hub</h2>
+    <p>输入 API Key 访问管理面板</p>
+    <input type="password" id="apiKeyInput" placeholder="sk-..." autofocus>
+    <button onclick="doLogin()">进入面板</button>
+    <div class="error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app" style="display:none">
+  <header>
+    <div style="display:flex;align-items:center">
+      <h1>LLM-Hub</h1>
+      <span class="version" id="versionBadge">loading</span>
+    </div>
+    <div class="user">
+      <span id="userKey">...</span>
+      <button onclick="logout()">登出</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('dashboard')">✅ 概览</div>
+    <div class="tab" onclick="switchTab('providers')">🔗 Provider</div>
+    <div class="tab" onclick="switchTab('usage')">📊 用量</div>
+    <div class="tab" onclick="switchTab('models')">🧠 模型</div>
+  </div>
+
+  <div class="container">
+    <!-- Dashboard -->
+    <div class="tab-content active" id="tab-dashboard">
+      <div class="grid">
+        <div class="card">
+          <h3><span class="icon"></span>已注册 Provider</h3>
+          <div class="value" id="providerCount">-</div>
+          <div class="label">支持的 LLM 供应商</div>
+        </div>
+        <div class="card">
+          <h3><span class="icon" style="background:var(--success)"></span>可用模型</h3>
+          <div class="value" id="modelCount">-</div>
+          <div class="label">当前可调用的模型总数</div>
+        </div>
+        <div class="card">
+          <h3><span class="icon" style="background:var(--warning)"></span>本月支出</h3>
+          <div class="value" id="monthlySpend">$0.00</div>
+          <div class="label">本月累计 API 费用</div>
+        </div>
+        <div class="card">
+          <h3><span class="icon" style="background:var(--danger)"></span>今日请求</h3>
+          <div class="value" id="todayRequests">-</div>
+          <div class="label">今日总请求次数</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Providers -->
+    <div class="tab-content" id="tab-providers">
+      <div class="card">
+        <h3><span class="icon"></span>Provider 列表</h3>
+        <div id="providerList"><div class="empty loading">加载中...</div></div>
+      </div>
+    </div>
+
+    <!-- Usage -->
+    <div class="tab-content" id="tab-usage">
+      <div class="card">
+        <h3><span class="icon" style="background:var(--warning)"></span>近期用量</h3>
+        <table>
+          <thead><tr><th>日期</th><th>支出</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>Total Tokens</th></tr></thead>
+          <tbody id="usageTable"><tr><td colspan="5" class="empty loading">加载中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Models -->
+    <div class="tab-content" id="tab-models">
+      <div class="card">
+        <h3><span class="icon" style="background:var(--success)"></span>可用模型</h3>
+        <div id="modelList"><div class="empty loading">加载中...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('llmhub_token');
+
+async function api(path, opts={}) {
+  const res = await fetch(API + path, {
+    headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+    ...opts
+  });
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function doLogin() {
+  const input = document.getElementById('apiKeyInput');
+  const err = document.getElementById('loginError');
+  token = input.value.trim();
+  if(!token){err.textContent='请输入 API Key';err.style.display='block';return}
+  try {
+    const data = await api('/');
+    localStorage.setItem('llmhub_token', token);
+    err.style.display='none';
+    showApp(data);
+  } catch(e) {
+    err.textContent='认证失败: ' + e.message;
+    err.style.display='block';
+  }
+}
+
+function logout() {
+  localStorage.removeItem('llmhub_token');
+  location.reload();
+}
+
+function showApp(info) {
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('versionBadge').textContent = 'v' + info.version;
+  document.getElementById('userKey').textContent = token.slice(0,8)+'...';
+  document.getElementById('providerCount').textContent = info.providers.length;
+  loadProviders(info.providers);
+  loadModels();
+  loadUsage();
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
+
+function loadProviders(list) {
+  const el = document.getElementById('providerList');
+  if(!list.length){el.innerHTML='<div class="empty">暂无 Provider</div>';return}
+  el.innerHTML = list.map(p => `
+    <div class="provider-row">
+      <div class="icon">🔗</div>
+      <div class="info">
+        <div class="name">${p.name || p.id}</div>
+        <div class="meta">ID: ${p.id}</div>
+      </div>
+      <div class="status"></div>
+    </div>
+  `).join('');
+}
+
+async function loadModels() {
+  try {
+    const data = await api('/v1/models');
+    document.getElementById('modelCount').textContent = data.data.length;
+    const el = document.getElementById('modelList');
+    if(!data.data.length){el.innerHTML='<div class="empty">暂无模型</div>';return}
+    el.innerHTML = data.data.map(m => `
+      <div class="provider-row">
+        <div class="icon">🧠</div>
+        <div class="info">
+          <div class="name">${m.id}</div>
+          <div class="meta">by ${m.owned_by}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('modelList').innerHTML='<div class="empty">加载失败</div>';
+  }
+}
+
+async function loadUsage() {
+  try {
+    const data = await api('/admin/usage');
+    const el = document.getElementById('usageTable');
+    const rows = data.data || [];
+    if(!rows.length){el.innerHTML='<tr><td colspan="5" class="empty">暂无用量数据</td></tr>';return}
+    let totalCost = 0;
+    el.innerHTML = rows.map(r => {
+      totalCost += r.cost || 0;
+      return `<tr>
+        <td>${r.date}</td>
+        <td>$${(r.cost||0).toFixed(4)}</td>
+        <td>${r.prompt_tokens || '-'}</td>
+        <td>${r.completion_tokens || '-'}</td>
+        <td>${r.total_tokens || '-'}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('monthlySpend').textContent = '$' + totalCost.toFixed(4);
+  } catch(e) {
+    document.getElementById('usageTable').innerHTML='<tr><td colspan="5" class="empty">加载失败</td></tr>';
+  }
+}
+
+// Auto-login if token exists
+if(token) {
+  api('/').then(showApp).catch(()=>{localStorage.removeItem('llmhub_token');token=null;});
+}
+
+document.getElementById('apiKeyInput').addEventListener('keypress', e=>{if(e.key==='Enter')doLogin()});
+</script>
+</body>
+</html>
