@@ -84,8 +84,8 @@ export default function ProvidersPanel() {
   async function handleSave() {
     setTestResult("")
     const body: any = {
-      id: form.id,
-      name: form.name || form.id,
+      providerId: form.id,
+      displayName: form.name || form.id,
       protocol: form.protocol,
       baseUrl: form.baseUrl,
       authType: form.authType,
@@ -122,8 +122,8 @@ export default function ProvidersPanel() {
       const body: any = {
         apiKey: form.testApiKey,
         config: {
-          id: form.id || "test",
-          name: form.name || "test",
+          providerId: form.id || "test",
+          displayName: form.name || "test",
           protocol: form.protocol,
           baseUrl: form.baseUrl,
           authType: form.authType,
@@ -185,8 +185,8 @@ export default function ProvidersPanel() {
       const body: any = {
         apiKey: form.testApiKey,
         config: {
-          id: form.id || "test",
-          name: form.name || "test",
+          providerId: form.id || "test",
+          displayName: form.name || "test",
           protocol: form.protocol,
           baseUrl: form.baseUrl,
           authType: form.authType,
