@@ -110,19 +110,19 @@ function createConverterFromConfig(cfg: ProviderConfig): BaseConverter {
     case "openai-compatible": {
       return new OpenAIConverter({
         providerId: cfg.providerId,
-        providerName: cfg.displayName,
+        providerName: cfg.providerId,
         baseUrl: cfg.baseUrl,
         chatEndpoint: cfg.chatEndpoint,
         authType: cfg.authType,
         capabilities: { ...getDefaultCapabilities("openai-compatible"), ...cfg.capabilities },
-        models: cfg.models,
+        models: cfg.models.map((id) => ({ id, name: id })),
         extraHeaders: cfg.extraHeaders,
       });
     }
     case "anthropic-compatible": {
       return new AnthropicConverter({
         providerId: cfg.providerId,
-        providerName: cfg.displayName,
+        providerName: cfg.providerId,
         baseUrl: cfg.baseUrl,
         apiVersion: cfg.chatEndpoint,
         capabilities: { ...getDefaultCapabilities("anthropic-compatible"), ...cfg.capabilities },

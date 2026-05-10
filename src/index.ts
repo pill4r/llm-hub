@@ -83,7 +83,7 @@ app.get("/v1/models", authMiddleware(), async (c) => {
       continue;
     }
     for (const m of cfg.models) {
-      models.push({ id: m.id, object: "model", owned_by: cfg.displayName });
+      models.push({ id: m, object: "model", owned_by: cfg.providerId });
     }
   }
 

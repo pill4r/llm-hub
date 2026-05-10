@@ -12,7 +12,6 @@ export type ProviderProtocol = "openai-compatible" | "anthropic-compatible" | "c
 /** Provider configuration stored in KV */
 export interface ProviderConfig {
   providerId: string;
-  displayName: string;
   protocol: ProviderProtocol;
   baseUrl: string;
   authType: "bearer" | "api-key" | "x-api-key";
@@ -20,8 +19,8 @@ export interface ProviderConfig {
   chatEndpoint?: string;
   /** Whether to automatically fetch model list from /models */
   autoFetchModels: boolean;
-  /** Manually specified models (used when autoFetchModels=false or fetch fails) */
-  models: { id: string; name: string }[];
+  /** Manually specified models */
+  models: string[];
   /** Provider capabilities override (defaults from protocol) */
   capabilities?: Partial<ConverterCapabilities>;
   /** Extra headers to send with every request */
@@ -34,7 +33,7 @@ export interface ProviderConfig {
 export interface ProviderValidation {
   ok: boolean;
   error?: string;
-  models?: { id: string; name: string }[];
+  models?: string[];
   latencyMs?: number;
 }
 
@@ -134,16 +133,16 @@ export function parseProviderConfig(raw: unknown): ProviderConfig | null {
 
   return {
     providerId: String(r.providerId || ""),
-    displayName: String(r.displayName || r.providerId || ""),
     protocol,
     baseUrl: String(r.baseUrl || ""),
     authType: (r.authType as "bearer" | "api-key" | "x-api-key") || "bearer",
     chatEndpoint: r.chatEndpoint ? String(r.chatEndpoint) : undefined,
     autoFetchModels: Boolean(r.autoFetchModels ?? true),
-    models: Array.isArray(r.models) ? r.models.map((m: any) => {
-      if (typeof m === "string") return { id: m, name: m };
-      return { id: String(m.id || ""), name: String(m.name || m.id || "") };
-    }).filter(m => m.id) : [],
+    models: Array.isArray(r.models)
+      ? r.models
+          .map((m: any) => (typeof m === "string" ? m : String(m.id || "")))
+          .filter((m: string) => m)
+      : [],
     capabilities: r.capabilities as Partial<ConverterCapabilities> | undefined,
     extraHeaders: r.extraHeaders as Record<string, string> | undefined,
     createdAt: String(r.createdAt || new Date().toISOString()),

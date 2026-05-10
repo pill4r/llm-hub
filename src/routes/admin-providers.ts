@@ -40,7 +40,7 @@ async function discoverModels(
   protocol: string,
   authType: string,
   apiKey: string
-): Promise<{ id: string; name: string }[]> {
+): Promise<string[]> {
   const modelsEndpoint = `${baseUrl.replace(/\/$/, "")}/models`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
 
@@ -66,27 +66,24 @@ async function discoverModels(
   // OpenAI-compatible: { data: [{ id: "gpt-4", ... }] }
   const openaiData = data.data as any[] | undefined;
   if (Array.isArray(openaiData)) {
-    return openaiData.map((m) => ({
-      id: String(m.id || m.model || ""),
-      name: String(m.id || m.model || m.display_name || ""),
-    })).filter((m) => m.id);
+    return openaiData
+      .map((m) => String(m.id || m.model || ""))
+      .filter((id) => id);
   }
 
   // Anthropic-compatible: { data: [{ type: "model", id: "claude-...", display_name: "..." }] }
   const anthropicData = (data as any).data as any[] | undefined;
   if (Array.isArray(anthropicData)) {
-    return anthropicData.map((m) => ({
-      id: String(m.id || ""),
-      name: String(m.display_name || m.id || ""),
-    })).filter((m) => m.id);
+    return anthropicData
+      .map((m) => String(m.id || ""))
+      .filter((id) => id);
   }
 
   // Fallback: try top-level array
   if (Array.isArray(data)) {
-    return data.map((m) => ({
-      id: String(m.id || m.model || ""),
-      name: String(m.id || m.model || m.display_name || ""),
-    })).filter((m) => m.id);
+    return data
+      .map((m) => String(m.id || m.model || ""))
+      .filter((id) => id);
   }
 
   return [];
@@ -103,7 +100,6 @@ admin.get("/", async (c) => {
   // Also include hardcoded providers
   const hardcoded = registry.list().map((r) => ({
     providerId: r.id,
-    displayName: r.name,
     protocol: r.id === "anthropic" ? "anthropic-compatible" : "custom",
     source: "builtin",
     capabilities: r.capabilities,
@@ -111,7 +107,6 @@ admin.get("/", async (c) => {
 
   const dynamic = configs.map((cfg) => ({
     providerId: cfg.providerId,
-    displayName: cfg.displayName,
     protocol: cfg.protocol,
     source: "dynamic",
     baseUrl: cfg.baseUrl,
