@@ -76,6 +76,9 @@ const dict: Record<Lang, Record<string, string>> = {
     fetch_models: "Fetch Models",
     updated: "updated",
     created: "created",
+    edit_provider_title: "Edit Provider",
+    models_list: "Models",
+    no_models: "No models configured. Click Fetch Models to auto-discover or add manually.",
   },
   zh: {
     login_title: "🔐 LLM-Hub 管理后台",
@@ -150,6 +153,9 @@ const dict: Record<Lang, Record<string, string>> = {
     budget: "预算",
     used: "已用",
     fetch_models: "获取模型",
+    edit_provider_title: "编辑提供商",
+    models_list: "模型列表",
+    no_models: "未配置模型。点击获取模型自动发现，或手动添加。",
   },
 };
 

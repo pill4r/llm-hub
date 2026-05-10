@@ -140,10 +140,10 @@ export function parseProviderConfig(raw: unknown): ProviderConfig | null {
     authType: (r.authType as "bearer" | "api-key" | "x-api-key") || "bearer",
     chatEndpoint: r.chatEndpoint ? String(r.chatEndpoint) : undefined,
     autoFetchModels: Boolean(r.autoFetchModels ?? true),
-    models: Array.isArray(r.models) ? r.models.map((m: any) => ({
-      id: String(m.id),
-      name: String(m.name || m.id),
-    })) : [],
+    models: Array.isArray(r.models) ? r.models.map((m: any) => {
+      if (typeof m === "string") return { id: m, name: m };
+      return { id: String(m.id || ""), name: String(m.name || m.id || "") };
+    }).filter(m => m.id) : [],
     capabilities: r.capabilities as Partial<ConverterCapabilities> | undefined,
     extraHeaders: r.extraHeaders as Record<string, string> | undefined,
     createdAt: String(r.createdAt || new Date().toISOString()),
