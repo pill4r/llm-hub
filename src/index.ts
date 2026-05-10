@@ -24,6 +24,7 @@ import { LoadBalancer, parseProviderKeys } from "./lib/load-balancer";
 import "./providers";
 import testApp from "./routes/test";
 import adminProviders from "./routes/admin-providers";
+import adminKeys from "./routes/admin-keys";
 import { getAllProviderConfigs } from "./lib/provider-config";
 
 const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
@@ -31,6 +32,7 @@ const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
 // Mount routes
 app.route("/test", testApp);
 app.route("/admin/providers", adminProviders);
+app.route("/admin/keys", adminKeys);
 // CORS
 // ========================================================================
 

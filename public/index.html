@@ -14,7 +14,7 @@
     padding: 20px;
   }
   h1 { color: #00d4aa; margin-bottom: 8px; }
-  .subtitle { color: #888; margin-bottom: 30px; font-size: 14px; }
+  .subtitle { color: #888; margin-bottom: 20px; font-size: 14px; }
   .card {
     background: #1a1a2e;
     border: 1px solid #2a2a4e;
@@ -64,8 +64,8 @@
   .btn-danger { background: #e53e3e; color: white; }
   .btn-group { display: flex; gap: 10px; margin-top: 16px; }
 
-  .provider-list { display: flex; flex-direction: column; gap: 10px; }
-  .provider-item {
+  .provider-list, .key-list { display: flex; flex-direction: column; gap: 10px; }
+  .provider-item, .key-item {
     background: #0f0f23;
     border: 1px solid #2a2a4e;
     border-radius: 8px;
@@ -74,10 +74,10 @@
     justify-content: space-between;
     align-items: center;
   }
-  .provider-item .info { flex: 1; }
-  .provider-item .name { font-weight: 500; color: #e0e0e0; }
-  .provider-item .meta { font-size: 12px; color: #888; margin-top: 4px; }
-  .provider-item .badge {
+  .provider-item .info, .key-item .info { flex: 1; }
+  .provider-item .name, .key-item .name { font-weight: 500; color: #e0e0e0; }
+  .provider-item .meta, .key-item .meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .badge {
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 4px;
@@ -86,6 +86,7 @@
   .badge-green { background: #004d3d; color: #00d4aa; }
   .badge-blue { background: #1a365d; color: #63b3ed; }
   .badge-gray { background: #2d2d2d; color: #aaa; }
+  .badge-red { background: #4d0000; color: #ff6b6b; }
 
   .result {
     margin-top: 12px;
@@ -127,22 +128,110 @@
     color: #63b3ed;
     border-radius: 4px;
   }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #2a2a4e;
+    padding-bottom: 0;
+  }
+  .tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .tab.active {
+    color: #00d4aa;
+    border-bottom-color: #00d4aa;
+  }
+  .tab:hover { color: #e0e0e0; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #1a1a2e;
+    border: 1px solid #2a2a4e;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .modal h3 { color: #00d4aa; margin-bottom: 16px; }
+  .modal-close {
+    float: right;
+    background: transparent;
+    color: #888;
+    font-size: 20px;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+  }
+  .modal-close:hover { color: #e0e0e0; }
+  .token-display {
+    background: #0f0f23;
+    border: 1px solid #00d4aa;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: monospace;
+    font-size: 13px;
+    color: #00d4aa;
+    word-break: break-all;
+    margin: 10px 0;
+    user-select: all;
+  }
+
+  .provider-key-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+  }
+  .provider-key-row input { margin-bottom: 0; }
+  .provider-key-row button {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .small-text { font-size: 12px; color: #888; }
 </style>
 </head>
 <body>
 
 <h1>LLM-Hub Admin</h1>
-<p class="subtitle">Dynamic Provider Management</p>
+<p class="subtitle">Provider & API Key Management</p>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('providers')">📊 Providers</button>
+  <button class="tab" onclick="switchTab('keys')">🔑 API Keys</button>
+</div>
+
+<!-- ========== PROVIDERS TAB ========== -->
+<div id="tab-providers" class="tab-panel active">
 
 <!-- Provider List -->
 <div class="card">
   <h2>📊 Providers</h2>
   <div id="providerList" class="provider-list">
-    <div class="provider-item">
-      <div class="info">
-        <span class="name">Loading...</span>
-      </div>
-    </div>
+    <div class="provider-item"><div class="info"><span class="name">Loading...</span></div></div>
   </div>
 </div>
 
@@ -210,8 +299,124 @@
   <div id="testResult" class="result"></div>
 </div>
 
+</div>
+
+<!-- ========== KEYS TAB ========== -->
+<div id="tab-keys" class="tab-panel">
+
+<!-- Key List -->
+<div class="card">
+  <h2>🔑 API Keys</h2>
+  <div id="keyList" class="key-list">
+    <div class="key-item"><div class="info"><span class="name">Loading...</span></div></div>
+  </div>
+</div>
+
+<!-- Create Key -->
+<div class="card">
+  <h2>➕ Create New Key</h2>
+  <div class="row">
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="keyName" placeholder="e.g., Production App" value="">
+    </div>
+    <div class="form-group">
+      <label>Monthly Budget (USD, 0 = unlimited)</label>
+      <input type="number" id="keyBudget" value="50" min="0">
+    </div>
+  </div>
+  <div class="row">
+    <div class="form-group">
+      <label>RPM (requests per minute)</label>
+      <input type="number" id="keyRpm" value="60" min="1">
+    </div>
+    <div class="form-group">
+      <label>TPM (tokens per minute)</label>
+      <input type="number" id="keyTpm" value="100000" min="1">
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Allowed Providers (empty = all)</label>
+    <input type="text" id="keyProviders" placeholder="openai, deepseek, opencodego" value="">
+    <p class="small-text">Comma-separated provider IDs. Leave empty to allow all.</p>
+  </div>
+  <div class="form-group">
+    <label>Allowed Models (empty = all)</label>
+    <input type="text" id="keyModels" placeholder="gpt-4o, deepseek-chat" value="">
+    <p class="small-text">Comma-separated model IDs. Leave empty to allow all.</p>
+  </div>
+
+  <div class="form-group">
+    <label>Provider API Keys</label>
+    <div id="providerKeyInputs">
+      <div class="provider-key-row" data-provider="openai">
+        <span>openai</span>
+        <input type="password" placeholder="sk-..." data-key="openai">
+      </div>
+      <div class="provider-key-row" data-provider="deepseek">
+        <span>deepseek</span>
+        <input type="password" placeholder="sk-..." data-key="deepseek">
+      </div>
+      <div class="provider-key-row" data-provider="opencodego">
+        <span>opencodego</span>
+        <input type="password" placeholder="sk-..." data-key="opencodego">
+      </div>
+      <div class="provider-key-row" data-provider="anthropic">
+        <span>anthropic</span>
+        <input type="password" placeholder="sk-ant-..." data-key="anthropic">
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-group">
+    <button class="btn-primary" onclick="createKey()">🔑 Create Key</button>
+  </div>
+
+  <div id="keyResult" class="result"></div>
+</div>
+
+</div>
+
+<!-- ========== MODAL ========== -->
+<div id="modal" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <h3 id="modalTitle">Title</h3>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
 <script>
 const API_BASE = '';
+
+// ========================================================================
+// Tabs
+// ========================================================================
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${name}')"]`).classList.add('active');
+  document.getElementById(`tab-${name}`).classList.add('active');
+  if (name === 'providers') fetchProviders();
+  if (name === 'keys') fetchKeys();
+}
+
+function openModal(title, html) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modal').classList.add('active');
+}
+
+function closeModal(e) {
+  if (!e || e.target.id === 'modal') {
+    document.getElementById('modal').classList.remove('active');
+  }
+}
+
+// ========================================================================
+// Providers
+// ========================================================================
 
 async function fetchProviders() {
   try {
@@ -219,8 +424,7 @@ async function fetchProviders() {
     const data = await resp.json();
     renderProviders(data.providers || []);
   } catch (err) {
-    document.getElementById('providerList').innerHTML = `
-      <div class="provider-item"><div class="info"><span class="name" style="color:#ff6b6b">Error: ${err.message}</span></div></div>`;
+    document.getElementById('providerList').innerHTML = `<div class="provider-item"><div class="info"><span class="name" style="color:#ff6b6b">Error: ${err.message}</span></div></div>`;
   }
 }
 
@@ -348,6 +552,159 @@ function getFormConfig() {
     createdAt: new Date().toISOString(),
   };
 }
+
+// ========================================================================
+// Keys
+// ========================================================================
+
+async function fetchKeys() {
+  try {
+    const resp = await fetch(`${API_BASE}/admin/keys`);
+    const data = await resp.json();
+    renderKeys(data.keys || []);
+  } catch (err) {
+    document.getElementById('keyList').innerHTML = `<div class="key-item"><div class="info"><span class="name" style="color:#ff6b6b">Error: ${err.message}</span></div></div>`;
+  }
+}
+
+function renderKeys(keys) {
+  const el = document.getElementById('keyList');
+  if (!keys.length) {
+    el.innerHTML = '<div class="key-item"><div class="info"><span class="name" style="color:#888">No API keys configured</span></div></div>';
+    return;
+  }
+  el.innerHTML = keys.map(k => `
+    <div class="key-item">
+      <div class="info">
+        <div>
+          <span class="name">${escapeHtml(k.name)}</span>
+          <span class="badge ${k.active ? 'badge-green' : 'badge-red'}">${k.active ? 'active' : 'inactive'}</span>
+        </div>
+        <div class="meta">
+          ID: ${k.keyId} ·
+          Token: ${k.tokenPrefix} ·
+          Budget: $${k.monthlyBudget || '∞'}/mo ·
+          Used: $${k.currentSpend?.toFixed?.(2) || '0'} ·
+          RPM: ${k.rpm} · TPM: ${k.tpm}
+          ${k.allowedProviders?.length ? '· Providers: ' + k.allowedProviders.join(', ') : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-secondary" style="padding:6px 12px;font-size:12px" onclick="showKeyDetail('${k.keyId}')">👁</button>
+        <button class="btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteKey('${k.keyId}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function createKey() {
+  const btn = document.querySelector('button[onclick="createKey()"]');
+  const result = document.getElementById('keyResult');
+  btn.classList.add('loading');
+  result.className = 'result';
+
+  const providersStr = document.getElementById('keyProviders').value;
+  const modelsStr = document.getElementById('keyModels').value;
+
+  // Collect provider keys
+  const providerKeys = {};
+  document.querySelectorAll('#providerKeyInputs input[data-key]').forEach(input => {
+    const val = input.value.trim();
+    if (val) {
+      providerKeys[input.dataset.key] = { apiKey: val };
+    }
+  });
+
+  const body = {
+    name: document.getElementById('keyName').value || 'Untitled',
+    monthlyBudget: Number(document.getElementById('keyBudget').value) || 0,
+    rpm: Number(document.getElementById('keyRpm').value) || 60,
+    tpm: Number(document.getElementById('keyTpm').value) || 100000,
+    allowedProviders: providersStr ? providersStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+    allowedModels: modelsStr ? modelsStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+    providerKeys,
+  };
+
+  try {
+    const resp = await fetch(`${API_BASE}/admin/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      result.className = 'result success';
+      result.innerHTML = `
+        <pre>✅ Key created!</pre>
+        <p class="small-text" style="margin-top:8px">Copy this token now — it won't be shown again:</p>
+        <div class="token-display">${data.key.token}</div>
+      `;
+      fetchKeys();
+      // Clear form
+      document.getElementById('keyName').value = '';
+      document.querySelectorAll('#providerKeyInputs input').forEach(i => i.value = '');
+    } else {
+      result.className = 'result error';
+      result.innerHTML = `<pre>❌ ${escapeHtml(data.error?.message || 'Failed')}</pre>`;
+    }
+  } catch (err) {
+    result.className = 'result error';
+    result.innerHTML = `<pre>❌ ${escapeHtml(err.message)}</pre>`;
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+async function showKeyDetail(keyId) {
+  try {
+    const resp = await fetch(`${API_BASE}/admin/keys/${keyId}`);
+    const data = await resp.json();
+    if (!data.key) {
+      alert('Key not found');
+      return;
+    }
+
+    const pkRows = (data.providerKeys || []).map(pk => `
+      <div class="provider-key-row">
+        <span>${pk.providerId}</span>
+        <input type="text" value="${pk.apiKey.slice(0, 8)}..." readonly style="background:#0f0f23">
+      </div>
+    `).join('');
+
+    openModal(data.key.name, `
+      <p><strong>Key ID:</strong> ${data.key.keyId}</p>
+      <p><strong>Status:</strong> ${data.key.active ? '<span style="color:#00d4aa">Active</span>' : '<span style="color:#ff6b6b">Inactive</span>'}</p>
+      <p><strong>Budget:</strong> $${data.key.monthlyBudget || '∞'}/mo · <strong>Used:</strong> $${data.currentSpend?.toFixed?.(2) || '0'} (${data.month})</p>
+      <p><strong>RPM:</strong> ${data.key.rpm} · <strong>TPM:</strong> ${data.key.tpm}</p>
+      ${data.key.allowedProviders?.length ? `<p><strong>Providers:</strong> ${data.key.allowedProviders.join(', ')}</p>` : ''}
+      ${data.key.allowedModels?.length ? `<p><strong>Models:</strong> ${data.key.allowedModels.join(', ')}</p>` : ''}
+      <p style="margin-top:12px"><strong>Provider Keys:</strong></p>
+      ${pkRows || '<p class="small-text">No provider keys configured</p>'}
+    `);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function deleteKey(keyId) {
+  if (!confirm(`Delete key "${keyId}"? This cannot be undone.`)) return;
+  try {
+    const resp = await fetch(`${API_BASE}/admin/keys/${keyId}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.success) {
+      fetchKeys();
+    } else {
+      alert(data.error?.message || 'Failed to delete');
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+// ========================================================================
+// Utils
+// ========================================================================
 
 function escapeHtml(text) {
   const div = document.createElement('div');
