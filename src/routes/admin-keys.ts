@@ -6,8 +6,12 @@
 
 import { Hono } from "hono";
 import type { KeyRecord, ProviderKeyRecord } from "../middleware/auth";
+import { adminAuthMiddleware } from "../middleware/admin-auth";
 
-const admin = new Hono<{ Bindings: { KV: KVNamespace } }>();
+const admin = new Hono<{ Bindings: { KV: KVNamespace; ADMIN_TOKEN: string } }>();
+
+// Apply auth to all routes
+admin.use("*", adminAuthMiddleware());
 
 // ========================================================================
 // Helpers

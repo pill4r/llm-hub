@@ -9,6 +9,8 @@ directory = "./public"
 
 [vars]
 ENVIRONMENT = "dev"
+# Admin dashboard access token (change this in production!)
+ADMIN_TOKEN = "llmhub_admin_change_me_in_production"
 
 # D1 Database for usage tracking and billing
 [[d1_databases]]
