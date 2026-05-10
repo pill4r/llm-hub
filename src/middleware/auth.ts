@@ -101,6 +101,25 @@ export async function validateKey(
 }
 
 /**
+ * Dev mode fallback key record (used when KV is empty in local testing).
+ */
+const DEV_FALLBACK_KEY: KeyRecord = {
+  keyId: "dev-key",
+  secret: "hub_test_key_12345",
+  name: "Dev Test Key",
+  allowedProviders: [],
+  allowedModels: [],
+  rpm: 1000,
+  tpm: 1000000,
+  monthlyBudget: 100,
+  currentSpend: 0,
+  active: true,
+  createdAt: new Date().toISOString(),
+};
+
+const DEV_FALLBACK_PROVIDERS: Record<string, ProviderKeyRecord> = {};
+
+/**
  * Hono middleware for API key authentication.
  */
 export function authMiddleware() {
@@ -116,7 +135,22 @@ export function authMiddleware() {
     }
 
     const kv = c.env.KV as KVNamespace;
-    const result = await validateKey(kv, apiKey);
+    let result = await validateKey(kv, apiKey);
+
+    // Dev mode fallback: auto-create test key if KV is empty
+    if (!result && c.env.ENVIRONMENT === "dev" && apiKey === "hub_test_key_12345") {
+      // Try to load provider keys from env var
+      if (!DEV_FALLBACK_PROVIDERS["opencodego"] && c.env.OPENCODE_GO_API_KEY) {
+        DEV_FALLBACK_PROVIDERS["opencodego"] = {
+          apiKey: c.env.OPENCODE_GO_API_KEY as string,
+          baseUrl: "https://opencode.ai/zen/go/v1",
+        };
+      }
+      result = {
+        keyRecord: DEV_FALLBACK_KEY,
+        providerKeys: DEV_FALLBACK_PROVIDERS,
+      };
+    }
 
     if (!result) {
       return c.json(

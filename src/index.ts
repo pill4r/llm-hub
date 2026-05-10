@@ -21,10 +21,12 @@ import { detectClient } from "./lib/client-detector";
 import { LoadBalancer, parseProviderKeys } from "./lib/load-balancer";
 
 import "./providers";
+import testApp from "./routes/test";
 
 const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
 
-// ========================================================================
+// Mount test routes
+app.route("/test", testApp);
 // CORS
 // ========================================================================
 
@@ -110,7 +112,10 @@ app.post("/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), asy
   if (!providerResponse.ok) {
     const errBody = await providerResponse.json().catch(() => ({}));
     const err = converter.parseError(errBody);
-    return c.json(consumer.buildError(err), providerResponse.status as 400 | 401 | 429 | 500);
+    return c.json(consumer.buildError({
+      ...err,
+      message: `${err.message} (provider: ${providerId}, status: ${providerResponse.status})`,
+    }), providerResponse.status as 400 | 401 | 429 | 500);
   }
 
   // Streaming

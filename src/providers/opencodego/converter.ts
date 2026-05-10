@@ -13,7 +13,8 @@ export class OpenCodeGoConverter extends OpenAIConverter {
   readonly providerName = "OpenCode Go";
 
   getChatCompletionEndpoint(): string {
-    return this.options.baseUrl || "https://opencode.ai/zen/go/v1/chat/completions";
+    const base = this.options.baseUrl || "https://opencode.ai/zen/go/v1";
+    return `${base}/chat/completions`;
   }
 }
 

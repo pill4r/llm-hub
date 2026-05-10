@@ -77,8 +77,16 @@ export class ConsumerRegistry {
 
   /**
    * Find plugin by path match.
+   * Priority:
+   *   1. Exact path match
+   *   2. Body content heuristic
    */
   find(path: string, headers: Headers, body: Record<string, unknown>): ConsumerPlugin | undefined {
+    // First: exact path match
+    const pathMatch = this.plugins.find((p) => p.paths.includes(path));
+    if (pathMatch) return pathMatch;
+
+    // Second: body heuristic
     return this.plugins.find((p) => p.detect(path, headers, body));
   }
 
