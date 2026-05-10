@@ -33,6 +33,13 @@ export class DeepSeekConverter extends OpenAIConverter {
       "Content-Type": "application/json",
     };
   }
+
+  getSupportedModels(): { id: string; name: string }[] {
+    return [
+      { id: "deepseek-chat", name: "DeepSeek V3" },
+      { id: "deepseek-reasoner", name: "DeepSeek R1" },
+    ];
+  }
 }
 
 // Register

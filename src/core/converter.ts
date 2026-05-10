@@ -130,6 +130,13 @@ export abstract class BaseConverter {
    * @param apiKey - The provider API key
    */
   abstract getHeaders(apiKey: string): Record<string, string>;
+
+  /**
+   * Get list of supported models for this provider.
+   */
+  getSupportedModels(): { id: string; name: string }[] {
+    return [];
+  }
 }
 
 /**
@@ -153,8 +160,15 @@ export class ConverterRegistry {
     return this.converters.has(providerId);
   }
 
-  list(): string[] {
-    return Array.from(this.converters.keys());
+  list(): { id: string; name: string; capabilities: ConverterCapabilities }[] {
+    return Array.from(this.converters.entries()).map(([id, Class]) => {
+      const instance = new Class();
+      return {
+        id,
+        name: instance.providerName,
+        capabilities: instance.capabilities,
+      };
+    });
   }
 }
 

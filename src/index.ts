@@ -37,23 +37,24 @@ app.get("/", (c) =>
   c.json({
     name: "llm-hub",
     version: "0.1.1",
-    providers: registry.list(),
+    supportedFormats: registry.list(),
   })
 );
 
 app.get("/v1/models", authMiddleware(), async (c) => {
   const keyRecord = c.get("keyRecord") as KeyRecord;
-  const providers = registry.list().filter((id) =>
-    keyRecord.allowedProviders.length === 0 || keyRecord.allowedProviders.includes(id)
+  const formats = registry.list().filter((fmt) =>
+    keyRecord.allowedProviders.length === 0 || keyRecord.allowedProviders.includes(fmt.id)
   );
 
   const models: { id: string; object: string; owned_by: string }[] = [];
-  for (const pid of providers) {
-    const ConverterClass = registry.get(pid);
+  for (const fmt of formats) {
+    const ConverterClass = registry.get(fmt.id);
     if (!ConverterClass) continue;
     const conv = new ConverterClass();
-    // Simplified model list - in production, load from KV
-    models.push({ id: `${pid}:default`, object: "model", owned_by: pid });
+    for (const m of conv.getSupportedModels()) {
+      models.push({ id: m.id, object: "model", owned_by: fmt.name });
+    }
   }
 
   return c.json({ object: "list", data: models });

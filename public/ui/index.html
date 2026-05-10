@@ -44,7 +44,10 @@ table tr:hover td{background:var(--surface2)}
 .provider-row .info{flex:1}
 .provider-row .info .name{font-weight:600;font-size:14px}
 .provider-row .info .meta{font-size:12px;color:var(--text2);margin-top:2px}
-.provider-row .status{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.provider-row .tags{display:flex;gap:6px;flex-wrap:wrap}
+.provider-row .tags .tag{font-size:11px;padding:2px 8px;border-radius:12px;background:var(--surface2);color:var(--text2)}
+.provider-row .tags .tag.on{color:var(--success);background:rgba(34,197,94,.1)}
+.provider-row .tags .tag.off{color:var(--text2);opacity:.5}
 .tabs{display:flex;gap:4px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border)}
 .tab{padding:12px 20px;font-size:14px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:.2s}
 .tab:hover{color:var(--text)}
@@ -85,7 +88,7 @@ table tr:hover td{background:var(--surface2)}
 
   <div class="tabs">
     <div class="tab active" onclick="switchTab('dashboard')">✅ 概览</div>
-    <div class="tab" onclick="switchTab('providers')">🔗 Provider</div>
+    <div class="tab" onclick="switchTab('providers')">🔗 API 格式</div>
     <div class="tab" onclick="switchTab('usage')">📊 用量</div>
     <div class="tab" onclick="switchTab('models')">🧠 模型</div>
   </div>
@@ -95,9 +98,9 @@ table tr:hover td{background:var(--surface2)}
     <div class="tab-content active" id="tab-dashboard">
       <div class="grid">
         <div class="card">
-          <h3><span class="icon"></span>已注册 Provider</h3>
+          <h3><span class="icon"></span>支持的 API 格式</h3>
           <div class="value" id="providerCount">-</div>
-          <div class="label">支持的 LLM 供应商</div>
+          <div class="label">网关可转译的 Provider 协议数</div>
         </div>
         <div class="card">
           <h3><span class="icon" style="background:var(--success)"></span>可用模型</h3>
@@ -117,10 +120,10 @@ table tr:hover td{background:var(--surface2)}
       </div>
     </div>
 
-    <!-- Providers -->
+    <!-- Providers / API Formats -->
     <div class="tab-content" id="tab-providers">
       <div class="card">
-        <h3><span class="icon"></span>Provider 列表</h3>
+        <h3><span class="icon"></span>支持的 API 格式</h3>
         <div id="providerList"><div class="empty loading">加载中...</div></div>
       </div>
     </div>
@@ -185,8 +188,9 @@ function showApp(info) {
   document.getElementById('app').style.display='block';
   document.getElementById('versionBadge').textContent = 'v' + info.version;
   document.getElementById('userKey').textContent = token.slice(0,8)+'...';
-  document.getElementById('providerCount').textContent = info.providers.length;
-  loadProviders(info.providers);
+  const formats = info.supportedFormats || [];
+  document.getElementById('providerCount').textContent = formats.length;
+  loadProviders(formats);
   loadModels();
   loadUsage();
 }
@@ -200,17 +204,26 @@ function switchTab(name) {
 
 function loadProviders(list) {
   const el = document.getElementById('providerList');
-  if(!list.length){el.innerHTML='<div class="empty">暂无 Provider</div>';return}
-  el.innerHTML = list.map(p => `
+  if(!list.length){el.innerHTML='<div class="empty">暂无数据</div>';return}
+  el.innerHTML = list.map(p => {
+    const caps = p.capabilities || {};
+    const tags = [
+      {k:'streaming',l:'Stream'},
+      {k:'tools',l:'Tools'},
+      {k:'vision',l:'Vision'},
+      {k:'reasoning',l:'Reasoning'},
+      {k:'jsonMode',l:'JSON'}
+    ].map(t => `<span class="tag ${caps[t.k]?'on':'off'}">${t.l}</span>`).join('');
+    return `
     <div class="provider-row">
       <div class="icon">🔗</div>
       <div class="info">
         <div class="name">${p.name || p.id}</div>
-        <div class="meta">ID: ${p.id}</div>
+        <div class="meta">ID: ${p.id} · Max ${(caps.maxContextLength/1000).toFixed(0)}k tokens</div>
+        <div class="tags" style="margin-top:6px">${tags}</div>
       </div>
-      <div class="status"></div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 async function loadModels() {
@@ -224,7 +237,7 @@ async function loadModels() {
         <div class="icon">🧠</div>
         <div class="info">
           <div class="name">${m.id}</div>
-          <div class="meta">by ${m.owned_by}</div>
+          <div class="meta">${m.owned_by}</div>
         </div>
       </div>
     `).join('');

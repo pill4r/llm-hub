@@ -350,6 +350,18 @@ export class OpenAIConverter extends BaseConverter {
     };
   }
 
+  getSupportedModels(): { id: string; name: string }[] {
+    return [
+      { id: "gpt-4o", name: "GPT-4o" },
+      { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+      { id: "gpt-4-turbo", name: "GPT-4 Turbo" },
+      { id: "gpt-4", name: "GPT-4" },
+      { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },
+      { id: "o1-preview", name: "o1 Preview" },
+      { id: "o1-mini", name: "o1 Mini" },
+    ];
+  }
+
   // ========================================================================
   // Helpers
   // ========================================================================
