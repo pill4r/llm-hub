@@ -7,11 +7,11 @@ compatibility_flags = ["nodejs_compat"]
 ENVIRONMENT = "dev"
 
 # D1 Database for usage tracking and billing
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "llm-hub-db"
-# database_id = ""
-# migrations_dir = "migrations"
+[[d1_databases]]
+binding = "DB"
+database_name = "llm-hub-db"
+database_id = "81f82b7a-4329-43c8-80ce-dd93d4b240f3"
+migrations_dir = "migrations"
 
 # KV Namespace for API keys and configurations
 [[kv_namespaces]]
