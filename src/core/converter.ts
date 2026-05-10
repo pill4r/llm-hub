@@ -123,7 +123,7 @@ export abstract class BaseConverter {
   /**
    * Get the provider's API endpoint for chat completions.
    */
-  abstract getChatCompletionEndpoint(model: string): string;
+  abstract getChatCompletionEndpoint(model?: string): string;
 
   /**
    * Get headers to send with the request (e.g., Authorization).

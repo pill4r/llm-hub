@@ -276,31 +276,9 @@ export class AnthropicConverter extends BaseConverter {
   // Anthropic SSE → IR StreamEvent
   // ========================================================================
 
-  streamEventFromProvider(
-    line: string
-  ): { event: StreamEvent | null; done: boolean } {
-    if (line.startsWith("event: ")) {
-      this._currentEventType = line.slice(7).trim();
-      return { event: null, done: false };
-    }
-
-    if (!line.startsWith("data: ")) {
-      return { event: null, done: false };
-    }
-
-    const dataStr = line.slice(6);
-    if (dataStr === "[DONE]") {
-      return { event: null, done: true };
-    }
-
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(dataStr);
-    } catch {
-      return { event: null, done: false };
-    }
-
-    const type = this._currentEventType || (data.type as string);
+  streamEventFromProvider(chunk: unknown): StreamEvent | null {
+    const data = chunk as Record<string, unknown>;
+    const type = data.type as string;
 
     switch (type) {
       case "message_start": {
@@ -310,111 +288,78 @@ export class AnthropicConverter extends BaseConverter {
           usage?: { input_tokens: number };
         };
         return {
-          event: {
-            type: "start",
-            id: msg?.id,
-            model: msg?.model,
-            usage: msg?.usage
-              ? {
-                  promptTokens: msg.usage.input_tokens,
-                  completionTokens: 0,
-                  totalTokens: msg.usage.input_tokens,
-                }
-              : undefined,
-          },
-          done: false,
+          type: "stream_start",
+          id: msg?.id || "",
+          model: msg?.model || "",
         };
       }
 
       case "content_block_start": {
         const block = data.content_block as Record<string, unknown>;
         if (block?.type === "text") {
-          return { event: null, done: false };
+          return null; // text block start has no content yet
         }
         if (block?.type === "tool_use") {
           return {
-            event: {
-              type: "tool_call_start",
-              toolCallId: String(block.id || ""),
-              name: String(block.name || ""),
-            },
-            done: false,
+            type: "tool_call_start",
+            index: Number(data.index || 0),
+            toolCallId: String(block.id || ""),
+            toolName: String(block.name || ""),
           };
         }
-        return { event: null, done: false };
+        return null;
       }
 
       case "content_block_delta": {
         const delta = data.delta as Record<string, unknown>;
+        const index = Number(data.index || 0);
         if (delta?.type === "text_delta") {
           return {
-            event: {
-              type: "text_delta",
-              delta: String(delta.text || ""),
-            },
-            done: false,
+            type: "text_delta",
+            index,
+            delta: String(delta.text || ""),
           };
         }
-        if (delta?.type === "thinking_delta" || delta?.type === "reasoning_delta") {
+        if (delta?.type === "thinking_delta") {
           return {
-            event: {
-              type: "reasoning_delta",
-              delta: String(delta.thinking || delta.text || ""),
-            },
-            done: false,
+            type: "reasoning_delta",
+            index,
+            delta: String(delta.thinking || ""),
           };
         }
         if (delta?.type === "input_json_delta") {
           return {
-            event: {
-              type: "tool_call_delta",
-              toolCallId: "", // will be filled by caller context
-              delta: String(delta.partial_json || ""),
-            },
-            done: false,
+            type: "tool_call_delta",
+            index,
+            toolCallId: "", // filled by tracking state
+            delta: String(delta.partial_json || ""),
           };
         }
-        return { event: null, done: false };
+        return null;
       }
 
       case "message_delta": {
-        const d = data.delta as {
-          stop_reason?: string | null;
-        };
-        const usage = data.usage as
-          | { output_tokens: number }
-          | undefined;
+        const d = data.delta as { stop_reason?: string | null };
         return {
-          event: {
-            type: "finish",
-            finishReason: this.mapStopReason(d?.stop_reason || null),
-            usage: usage
-              ? {
-                  promptTokens: 0,
-                  completionTokens: usage.output_tokens,
-                  totalTokens: usage.output_tokens,
-                }
-              : undefined,
-          },
-          done: false,
+          type: "finish",
+          finishReason: this.mapStopReason(d?.stop_reason || null),
         };
       }
 
       case "message_stop":
-        return { event: null, done: true };
+        return null; // end signal
 
       case "content_block_stop":
-        return { event: null, done: false };
+        return null;
 
       default:
-        return { event: null, done: false };
+        return null;
     }
   }
 
-  private _currentEventType = "";
-
-  isStreamEnd(line: string): boolean {
-    return line.startsWith("event: message_stop") || line.trim() === "data: [DONE]";
+  isStreamEnd(chunk: unknown): boolean {
+    const data = chunk as Record<string, unknown>;
+    return data.type === "message_stop";
   }
 
   // ========================================================================
