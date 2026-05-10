@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM-Hub Admin</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f0f23;
+    color: #e0e0e0;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 { color: #00d4aa; margin-bottom: 8px; }
+  .subtitle { color: #888; margin-bottom: 30px; font-size: 14px; }
+  .card {
+    background: #1a1a2e;
+    border: 1px solid #2a2a4e;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    color: #00d4aa;
+    font-size: 18px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: #aaa; margin-bottom: 6px; }
+  input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: #0f0f23;
+    border: 1px solid #2a2a4e;
+    border-radius: 8px;
+    color: #e0e0e0;
+    font-size: 14px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: #00d4aa;
+  }
+  textarea { min-height: 80px; resize: vertical; font-family: monospace; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
+
+  button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: opacity 0.2s;
+  }
+  button:hover { opacity: 0.85; }
+  .btn-primary { background: #00d4aa; color: #0f0f23; }
+  .btn-secondary { background: #2a2a4e; color: #e0e0e0; }
+  .btn-danger { background: #e53e3e; color: white; }
+  .btn-group { display: flex; gap: 10px; margin-top: 16px; }
+
+  .provider-list { display: flex; flex-direction: column; gap: 10px; }
+  .provider-item {
+    background: #0f0f23;
+    border: 1px solid #2a2a4e;
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .provider-item .info { flex: 1; }
+  .provider-item .name { font-weight: 500; color: #e0e0e0; }
+  .provider-item .meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .provider-item .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-right: 8px;
+  }
+  .badge-green { background: #004d3d; color: #00d4aa; }
+  .badge-blue { background: #1a365d; color: #63b3ed; }
+  .badge-gray { background: #2d2d2d; color: #aaa; }
+
+  .result {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+  }
+  .result.success { background: #004d3d; color: #00d4aa; display: block; }
+  .result.error { background: #3d0000; color: #ff6b6b; display: block; }
+  .result pre { white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 12px; }
+
+  .loading { opacity: 0.6; pointer-events: none; }
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid #2a2a4e;
+    border-top-color: #00d4aa;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .models-preview {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #0f0f23;
+    border: 1px solid #2a2a4e;
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 10px;
+  }
+  .models-preview .model-tag {
+    display: inline-block;
+    font-size: 12px;
+    padding: 2px 8px;
+    margin: 2px;
+    background: #1a365d;
+    color: #63b3ed;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<h1>LLM-Hub Admin</h1>
+<p class="subtitle">Dynamic Provider Management</p>
+
+<!-- Provider List -->
+<div class="card">
+  <h2>📊 Providers</h2>
+  <div id="providerList" class="provider-list">
+    <div class="provider-item">
+      <div class="info">
+        <span class="name">Loading...</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Provider -->
+<div class="card">
+  <h2>➕ Add / Update Provider</h2>
+  <div class="row">
+    <div class="form-group">
+      <label>Provider ID</label>
+      <input type="text" id="providerId" placeholder="e.g., siliconflow" value="">
+    </div>
+    <div class="form-group">
+      <label>Display Name</label>
+      <input type="text" id="displayName" placeholder="e.g., SiliconFlow" value="">
+    </div>
+  </div>
+  <div class="row">
+    <div class="form-group">
+      <label>Protocol</label>
+      <select id="protocol">
+        <option value="openai-compatible">OpenAI Compatible</option>
+        <option value="anthropic-compatible" disabled>Anthropic Compatible (soon)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Auth Type</label>
+      <select id="authType">
+        <option value="bearer">Bearer Token</option>
+        <option value="api-key">api-key Header</option>
+        <option value="x-api-key">x-api-key Header</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Base URL</label>
+    <input type="text" id="baseUrl" placeholder="https://api.example.com/v1" value="">
+  </div>
+  <div class="row">
+    <div class="form-group">
+      <label>Chat Endpoint (optional)</label>
+      <input type="text" id="chatEndpoint" placeholder="/chat/completions" value="">
+    </div>
+    <div class="form-group">
+      <label>Auto-fetch models</label>
+      <select id="autoFetchModels">
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Models (comma-separated, if auto-fetch is off)</label>
+    <input type="text" id="models" placeholder="model-a, model-b" value="">
+  </div>
+  <div class="form-group">
+    <label>API Key (for testing)</label>
+    <input type="password" id="testApiKey" placeholder="sk-..." value="">
+  </div>
+
+  <div class="btn-group">
+    <button class="btn-secondary" onclick="testProvider()">🔬 Test</button>
+    <button class="btn-primary" onclick="saveProvider()">💾 Save</button>
+  </div>
+
+  <div id="testResult" class="result"></div>
+</div>
+
+<script>
+const API_BASE = '';
+
+async function fetchProviders() {
+  try {
+    const resp = await fetch(`${API_BASE}/admin/providers`);
+    const data = await resp.json();
+    renderProviders(data.providers || []);
+  } catch (err) {
+    document.getElementById('providerList').innerHTML = `
+      <div class="provider-item"><div class="info"><span class="name" style="color:#ff6b6b">Error: ${err.message}</span></div></div>`;
+  }
+}
+
+function renderProviders(providers) {
+  const el = document.getElementById('providerList');
+  if (!providers.length) {
+    el.innerHTML = '<div class="provider-item"><div class="info"><span class="name" style="color:#888">No providers configured</span></div></div>';
+    return;
+  }
+  el.innerHTML = providers.map(p => `
+    <div class="provider-item">
+      <div class="info">
+        <div>
+          <span class="name">${escapeHtml(p.displayName || p.providerId)}</span>
+          <span class="badge ${p.source === 'builtin' ? 'badge-blue' : 'badge-green'}">${p.source}</span>
+          <span class="badge badge-gray">${p.protocol || 'custom'}</span>
+        </div>
+        <div class="meta">
+          ID: ${p.providerId} ·
+          ${p.baseUrl || ''} ·
+          ${typeof p.models === 'number' ? p.models + ' models' : (p.models?.length || 0) + ' models'}
+        </div>
+      </div>
+      ${p.source === 'dynamic' ? `<button class="btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteProvider('${p.providerId}')">✕</button>` : ''}
+    </div>
+  `).join('');
+}
+
+async function testProvider() {
+  const btn = document.querySelector('button[onclick="testProvider()"]');
+  const result = document.getElementById('testResult');
+  btn.classList.add('loading');
+  result.className = 'result';
+  result.textContent = '';
+
+  const config = getFormConfig();
+  const apiKey = document.getElementById('testApiKey').value;
+
+  try {
+    const resp = await fetch(`${API_BASE}/admin/providers/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config, apiKey }),
+    });
+    const data = await resp.json();
+
+    if (data.result?.ok) {
+      result.className = 'result success';
+      let html = `✅ Connected! Latency: ${data.result.latencyMs}ms\n`;
+      html += `Response: ${JSON.stringify(data.response, null, 2)}\n`;
+      if (data.result.models?.length) {
+        html += `\nModels found: ${data.result.models.length}\n`;
+        html += `<div class="models-preview">${data.result.models.map(m => `<span class="model-tag">${escapeHtml(m.id)}</span>`).join('')}</div>`;
+      }
+      result.innerHTML = `<pre>${html}</pre>`;
+    } else {
+      result.className = 'result error';
+      result.innerHTML = `<pre>❌ Failed: ${escapeHtml(data.result?.error || 'Unknown error')}</pre>`;
+    }
+  } catch (err) {
+    result.className = 'result error';
+    result.innerHTML = `<pre>❌ Error: ${escapeHtml(err.message)}</pre>`;
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+async function saveProvider() {
+  const btn = document.querySelector('button[onclick="saveProvider()"]');
+  const result = document.getElementById('testResult');
+  btn.classList.add('loading');
+
+  const config = getFormConfig();
+
+  try {
+    const resp = await fetch(`${API_BASE}/admin/providers/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      result.className = 'result success';
+      result.innerHTML = `<pre>✅ Provider ${data.action}: ${data.providerId}</pre>`;
+      fetchProviders();
+    } else {
+      result.className = 'result error';
+      result.innerHTML = `<pre>❌ ${escapeHtml(data.error?.message || 'Failed')}</pre>`;
+    }
+  } catch (err) {
+    result.className = 'result error';
+    result.innerHTML = `<pre>❌ ${escapeHtml(err.message)}</pre>`;
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+async function deleteProvider(providerId) {
+  if (!confirm(`Delete provider "${providerId}"?`)) return;
+  try {
+    const resp = await fetch(`${API_BASE}/admin/providers/${providerId}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.success) {
+      fetchProviders();
+    } else {
+      alert(data.error?.message || 'Failed to delete');
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function getFormConfig() {
+  const modelsStr = document.getElementById('models').value;
+  return {
+    providerId: document.getElementById('providerId').value,
+    displayName: document.getElementById('displayName').value,
+    protocol: document.getElementById('protocol').value,
+    baseUrl: document.getElementById('baseUrl').value,
+    authType: document.getElementById('authType').value,
+    chatEndpoint: document.getElementById('chatEndpoint').value || undefined,
+    autoFetchModels: document.getElementById('autoFetchModels').value === 'true',
+    models: modelsStr ? modelsStr.split(',').map(s => ({ id: s.trim(), name: s.trim() })).filter(m => m.id) : [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Load on page load
+fetchProviders();
+</script>
+
+</body>
+</html>

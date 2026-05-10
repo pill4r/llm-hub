@@ -18,15 +18,19 @@ import type { KeyRecord, ProviderKeyRecord } from "./middleware/auth";
 import { consumerRegistry } from "./consumers";
 import type { ConsumerPlugin } from "./consumers";
 import { detectClient } from "./lib/client-detector";
+import { resolveProviderById, getProviderApiKey } from "./lib/provider-resolver";
 import { LoadBalancer, parseProviderKeys } from "./lib/load-balancer";
 
 import "./providers";
 import testApp from "./routes/test";
+import adminProviders from "./routes/admin-providers";
+import { getAllProviderConfigs } from "./lib/provider-config";
 
 const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
 
-// Mount test routes
+// Mount routes
 app.route("/test", testApp);
+app.route("/admin/providers", adminProviders);
 // CORS
 // ========================================================================
 
@@ -53,6 +57,9 @@ app.get("/", (c) =>
 
 app.get("/v1/models", authMiddleware(), async (c) => {
   const keyRecord = c.get("keyRecord") as KeyRecord;
+  const kv = c.env.KV;
+
+  // Built-in providers
   const formats = registry.list().filter((fmt) =>
     keyRecord.allowedProviders.length === 0 || keyRecord.allowedProviders.includes(fmt.id)
   );
@@ -67,6 +74,17 @@ app.get("/v1/models", authMiddleware(), async (c) => {
     }
   }
 
+  // Dynamic providers
+  const dynamicConfigs = await getAllProviderConfigs(kv);
+  for (const cfg of dynamicConfigs) {
+    if (keyRecord.allowedProviders.length > 0 && !keyRecord.allowedProviders.includes(cfg.providerId)) {
+      continue;
+    }
+    for (const m of cfg.models) {
+      models.push({ id: m.id, object: "model", owned_by: cfg.displayName });
+    }
+  }
+
   return c.json({ object: "list", data: models });
 });
 
@@ -74,7 +92,7 @@ app.get("/v1/models", authMiddleware(), async (c) => {
 // Universal API route - handles all consumer formats
 // ========================================================================
 
-app.post("/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), async (c) => {
+app.post("/v1/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), async (c) => {
   const path = c.req.path;
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
 
@@ -204,6 +222,7 @@ type ResolveResult = ResolveError | ResolveSuccess;
 async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
   const keyRecord = c.get("keyRecord") as KeyRecord;
   const providerKeys = c.get("providerKeys") as Record<string, ProviderKeyRecord>;
+  const kv = c.env.KV as KVNamespace;
 
   const { providerId, model: resolvedModel } = resolveTarget(c.req.raw.headers, model);
 
@@ -221,21 +240,22 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
     };
   }
 
-  // Get converter
-  const ConverterClass = registry.get(providerId);
-  if (!ConverterClass) {
+  // Resolve provider (built-in or dynamic)
+  const resolved = await resolveProviderById(providerId, kv);
+  if (!resolved.ok) {
     return {
       ok: false,
       response: c.json({
         error: {
-          message: `Unknown provider "${providerId}"`,
-          type: "invalid_request_error",
-          code: "unknown_provider",
+          message: resolved.error.message,
+          type: resolved.error.type,
+          code: resolved.error.code,
         },
-      }, 400),
+      }, resolved.status),
     };
   }
-  const converter = new ConverterClass() as BaseConverter;
+
+  const converter = resolved.converter;
 
   // Get provider API key (with load balancing)
   const keyData = providerKeys[providerId];
@@ -273,6 +293,28 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
     providerKeyRecord = { apiKey: slot.apiKey, baseUrl: slot.baseUrl };
   } else {
     providerKeyRecord = { apiKey: keyConfig!.apiKey, baseUrl: keyConfig!.baseUrl };
+  }
+
+  // For dynamic providers, apply config overrides
+  if (resolved.config) {
+    converter.options.baseUrl = resolved.config.baseUrl;
+    if (resolved.config.chatEndpoint) {
+      converter.options.chatEndpoint = resolved.config.chatEndpoint;
+    }
+    if (resolved.config.authType) {
+      converter.options.authType = resolved.config.authType;
+    }
+    if (resolved.config.capabilities) {
+      Object.assign(converter.capabilities, resolved.config.capabilities);
+    }
+    if (resolved.config.extraHeaders) {
+      converter.options.extraHeaders = resolved.config.extraHeaders;
+    }
+  }
+
+  // Override with user's configured baseUrl if set
+  if (providerKeyRecord.baseUrl) {
+    converter.options.baseUrl = providerKeyRecord.baseUrl;
   }
 
   // Check model permission
