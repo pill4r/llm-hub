@@ -12,7 +12,11 @@ export function removeAdminToken() {
   localStorage.removeItem("llmhub_admin_token");
 }
 
-export async function apiFetch(path: string, opts?: RequestInit) {
+/**
+ * Fetch wrapper that injects admin token and handles 401.
+ * Returns the raw Response so callers can check .ok, .status, etc.
+ */
+export async function apiFetch(path: string, opts?: RequestInit): Promise<Response> {
   const token = getAdminToken();
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -30,10 +34,5 @@ export async function apiFetch(path: string, opts?: RequestInit) {
     throw new Error("Unauthorized");
   }
 
-  if (!resp.ok) {
-    const data = await resp.json().catch(() => ({}));
-    throw new Error(data.error?.message || `HTTP ${resp.status}`);
-  }
-
-  return resp.json();
+  return resp;
 }
