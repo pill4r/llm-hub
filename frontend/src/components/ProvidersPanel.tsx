@@ -15,9 +15,22 @@ interface Provider {
   source: string
   status: string
   protocol: string
-  baseUrl: string
-  models: string[]
+  baseUrl?: string
+  models?: number
   capabilities?: string[]
+}
+
+function mapProvider(p: any): Provider {
+  return {
+    id: p.providerId || p.id,
+    name: p.displayName || p.name,
+    source: p.source || "builtin",
+    status: "active",
+    protocol: p.protocol || "openai-compatible",
+    baseUrl: p.baseUrl,
+    models: typeof p.models === "number" ? p.models : (p.models?.length || 0),
+    capabilities: p.capabilities,
+  }
 }
 
 interface ProviderFormState {
@@ -49,7 +62,7 @@ export default function ProvidersPanel() {
       const resp = await apiFetch("/admin/providers")
       if (!resp.ok) throw new Error("failed")
       const data = await resp.json()
-      setProviders(data.providers || [])
+      setProviders((data.providers || []).map(mapProvider))
     } catch {
       setProviders([])
     } finally {
@@ -75,7 +88,7 @@ export default function ProvidersPanel() {
     }
     try {
       const resp = await apiFetch("/admin/providers", {
-        method: editing ? "PUT" : "POST",
+        method: "POST",
         body: JSON.stringify(body),
       })
       if (!resp.ok) throw new Error(await resp.text())
@@ -149,7 +162,7 @@ export default function ProvidersPanel() {
       testApiKey: "",
       chatEndpoint: "",
       autoFetch: "true",
-      models: p.models?.join(", ") || "",
+      models: typeof p.models === "string" ? p.models : "",
     })
     setEditing(true)
     window.scrollTo({ top: 0, behavior: "smooth" })
@@ -254,7 +267,7 @@ export default function ProvidersPanel() {
                       ID: {p.id} · Protocol: {p.protocol} · Base URL: {p.baseUrl}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {p.models?.length || 0} {t("models_count")}
+                      {p.models || 0} {t("models_count")}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
