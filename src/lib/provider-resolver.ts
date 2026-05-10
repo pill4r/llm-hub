@@ -6,6 +6,7 @@
 
 import { registry, type BaseConverter } from "../core/converter";
 import { OpenAIConverter } from "../providers/openai/converter";
+import { AnthropicConverter } from "../providers/anthropic/converter";
 import {
   parseProviderConfig,
   getDefaultCapabilities,
@@ -118,9 +119,15 @@ function createConverterFromConfig(cfg: ProviderConfig): BaseConverter {
         extraHeaders: cfg.extraHeaders,
       });
     }
-    case "anthropic-compatible":
-      // TODO: Create generic anthropic-compatible converter
-      throw new Error("anthropic-compatible protocol not yet implemented");
+    case "anthropic-compatible": {
+      return new AnthropicConverter({
+        providerId: cfg.providerId,
+        providerName: cfg.displayName,
+        baseUrl: cfg.baseUrl,
+        apiVersion: cfg.chatEndpoint,
+        capabilities: { ...getDefaultCapabilities("anthropic-compatible"), ...cfg.capabilities },
+      });
+    }
     case "custom":
       throw new Error("custom protocol requires built-in converter registration");
     default:

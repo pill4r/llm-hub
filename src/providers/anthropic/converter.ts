@@ -36,8 +36,8 @@ import type {
 import type { StreamEvent } from "../../core/ir/stream";
 
 export class AnthropicConverter extends BaseConverter {
-  readonly providerId = "anthropic";
-  readonly providerName = "Anthropic";
+  readonly providerId: string;
+  readonly providerName: string;
 
   readonly capabilities: ConverterCapabilities = {
     streaming: true,
@@ -51,6 +51,11 @@ export class AnthropicConverter extends BaseConverter {
 
   constructor(options: ConverterOptions = {}) {
     super(options);
+    this.providerId = (options.providerId as string) || "anthropic";
+    this.providerName = (options.providerName as string) || "Anthropic";
+    if (options.capabilities) {
+      this.capabilities = { ...this.capabilities, ...(options.capabilities as Partial<ConverterCapabilities>) };
+    }
   }
 
   // ========================================================================

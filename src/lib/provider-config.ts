@@ -85,8 +85,10 @@ export function getDefaultCapabilities(protocol: ProviderProtocol): ConverterCap
  * Build chat completions endpoint from config
  */
 export function buildEndpoint(config: ProviderConfig): string {
-  const suffix = config.chatEndpoint || "/chat/completions";
-  // Remove trailing slash from baseUrl
+  const defaultSuffix = config.protocol === "anthropic-compatible"
+    ? "/messages"
+    : "/chat/completions";
+  const suffix = config.chatEndpoint || defaultSuffix;
   const base = config.baseUrl.replace(/\/$/, "");
   return `${base}${suffix}`;
 }

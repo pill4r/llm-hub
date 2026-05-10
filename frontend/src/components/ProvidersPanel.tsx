@@ -188,6 +188,7 @@ export default function ProvidersPanel() {
               <Label>{t("protocol")}</Label>
               <Select value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value })}>
                 <option value="openai-compatible">{t("protocol_openai")}</option>
+                <option value="anthropic-compatible">{t("protocol_anthropic")}</option>
               </Select>
             </div>
             <div className="space-y-2">
