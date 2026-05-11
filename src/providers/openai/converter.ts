@@ -22,6 +22,9 @@ import {
   applyRequestTransform,
   applyResponseTransform,
   applyStreamTransform,
+  buildProviderRequest,
+  parseProviderResponse,
+  parseStreamChunk,
 } from "../../lib/transform-engine";
 
 export class OpenAIConverter extends BaseConverter {
@@ -124,7 +127,7 @@ export class OpenAIConverter extends BaseConverter {
     // Apply custom transforms if configured
     const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
     if (transforms?.request) {
-      return applyRequestTransform(body, transforms.request);
+      return buildProviderRequest(irRequest as unknown as Record<string, unknown>, transforms.request);
     }
 
     return body;
@@ -211,7 +214,7 @@ export class OpenAIConverter extends BaseConverter {
     // Apply custom response transforms if configured
     const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
     if (transforms?.response) {
-      raw = applyResponseTransform(raw, transforms.response);
+      raw = parseProviderResponse(raw, transforms.response);
     }
 
     const res = raw as Record<string, unknown>;
@@ -287,7 +290,9 @@ export class OpenAIConverter extends BaseConverter {
     // Apply custom stream transforms if configured
     const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
     if (transforms?.stream) {
-      raw = applyStreamTransform(raw, transforms.stream);
+      const parsed = parseStreamChunk(raw, transforms.stream);
+      if (parsed === null) return null;
+      raw = parsed;
     }
 
     const chunk = raw as Record<string, unknown>;

@@ -22,6 +22,8 @@ export interface ConverterOptions {
   baseUrl?: string;
   /** Provider API version */
   apiVersion?: string;
+  /** Custom declarative transforms (IR-centric field mapping) */
+  transforms?: import("../lib/transform-engine").CustomTransforms;
   /** Additional provider-specific options */
   [key: string]: unknown;
 }

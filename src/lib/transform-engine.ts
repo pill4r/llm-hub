@@ -1,72 +1,90 @@
 /**
- * Declarative Transform Engine
+ * Declarative Transform Engine v2 — IR-Centric
  *
- * Users describe protocol differences via JSON configuration rather than code.
- * The engine applies these transforms at runtime to convert between
- * provider-specific formats and the hub's Internal Representation (IR).
+ * Users describe how IR fields map to provider fields.
+ * The engine builds request/response directly from IR, without relying on
+ * a "base protocol" as intermediate.
  */
 
 // ========================================================================
-// Transform Types
+// IR Field Mapping Types
 // ========================================================================
 
-/** Request body transforms (applied AFTER base protocol conversion) */
-export interface RequestTransform {
-  /** Wrap the entire body in a field: { [wrap]: body } */
+/**
+ * Maps IR request fields to provider request fields.
+ *
+ * Example — provider wraps everything in "input" and renames maxTokens:
+ * {
+ *   wrap: "input",
+ *   fieldMap: {
+ *     "generation.maxTokens": "max_tokens",
+ *     "model": "model_id"
+ *   }
+ * }
+ */
+export interface RequestFieldMap {
+  /** Wrap the entire request body in a field: { [wrap]: body } */
   wrap?: string;
-  /** Add/replace fields */
-  set?: Record<string, unknown>;
-  /** Rename fields: { oldName: newName } */
-  rename?: Record<string, string>;
-  /** Remove fields */
-  unset?: string[];
+  /** Map IR dot-paths → provider field names.
+   *  Key = IR field path, Value = provider field name.
+   *  Unmapped IR fields are passed through as-is.
+   */
+  fieldMap?: Record<string, string>;
+  /** Static fields to add regardless of IR content */
+  static?: Record<string, unknown>;
+  /** IR fields to exclude from the output */
+  exclude?: string[];
 }
 
-/** Response body transforms (applied BEFORE base protocol parsing) */
-export interface ResponseTransform {
-  /** Unwrap from a nested field: body[unwrap] */
+/**
+ * Maps provider response fields back to IR response fields.
+ *
+ * Example — provider nests response under "output":
+ * {
+ *   unwrap: "output",
+ *   fieldMap: {
+ *     "output.text": "choices[0].message.content",
+ *     "output.model_id": "model"
+ *   }
+ * }
+ */
+export interface ResponseFieldMap {
+  /** Unwrap from a nested field before mapping */
   unwrap?: string;
-  /** Extract fields by dot-path and assign to top-level */
-  extract?: Record<string, string>;
-  /** Construct a standard OpenAI-like response from extracted fields */
-  construct?: {
-    id?: string;
-    model?: string;
-    content?: string;
-    promptTokens?: string;
-    completionTokens?: string;
-    totalTokens?: string;
-    finishReason?: string;
-  };
+  /** Map provider dot-paths → IR field paths.
+   *  Key = provider field path, Value = IR field path.
+   */
+  fieldMap?: Record<string, string>;
+  /** Static fields to add */
+  static?: Record<string, unknown>;
 }
 
-/** Stream chunk transforms */
-export interface StreamTransform {
-  /** Extract text delta from chunk by dot-path */
-  contentPath?: string;
-  /** Extract usage from chunk by dot-path */
+/**
+ * Maps provider stream chunks to IR stream events.
+ */
+export interface StreamFieldMap {
+  /** Path to text delta in provider chunk */
+  textDeltaPath?: string;
+  /** Path to usage data in provider chunk */
   usagePath?: string;
-  /** Done marker string */
+  /** Path to finish reason in provider chunk */
+  finishReasonPath?: string;
+  /** String that marks stream end */
   doneMarker?: string;
 }
 
 /** Full custom transform configuration */
 export interface CustomTransforms {
-  request?: RequestTransform;
-  response?: ResponseTransform;
-  stream?: StreamTransform;
+  request?: RequestFieldMap;
+  response?: ResponseFieldMap;
+  stream?: StreamFieldMap;
 }
 
 // ========================================================================
 // Path Utilities
 // ========================================================================
 
-/**
- * Get a value from an object by dot-path.
- * Examples:
- *   getPath({ a: { b: 1 } }, "a.b") → 1
- *   getPath({ arr: [{ x: 2 }] }, "arr[0].x") → 2
- */
+/** Get value by dot-path from object. Supports array indices: "choices[0].text" */
 export function getPath(obj: unknown, path: string): unknown {
   if (!obj || typeof obj !== "object") return undefined;
   if (!path) return obj;
@@ -89,9 +107,7 @@ export function getPath(obj: unknown, path: string): unknown {
   return current;
 }
 
-/**
- * Set a value in an object by dot-path (creates nested objects as needed).
- */
+/** Set value by dot-path, creating nested objects/arrays as needed. */
 export function setPath(obj: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(/\.|\[(\d+)\]/).filter(Boolean);
   let current: any = obj;
@@ -111,146 +127,238 @@ export function setPath(obj: Record<string, unknown>, path: string, value: unkno
 }
 
 // ========================================================================
-// Transform Application
+// Flatten / Unflatten IR
 // ========================================================================
 
-/**
- * Apply request transforms to a provider request body.
- * Called AFTER the base converter has built the standard request.
- */
-export function applyRequestTransform(
-  body: Record<string, unknown>,
-  transform: RequestTransform | undefined
-): Record<string, unknown> {
-  if (!transform) return body;
-
-  let result: Record<string, unknown> = { ...body };
-
-  // Rename fields
-  if (transform.rename) {
-    for (const [oldKey, newKey] of Object.entries(transform.rename)) {
-      if (oldKey in result) {
-        result[newKey] = result[oldKey];
-        delete result[oldKey];
-      }
+/** Flatten nested object to dot-paths: { a: { b: 1 } } → { "a.b": 1 } */
+function flatten(obj: unknown, prefix = "", result: Record<string, unknown> = {}): Record<string, unknown> {
+  if (obj === null || obj === undefined) return result;
+  if (typeof obj !== "object") {
+    result[prefix] = obj;
+    return result;
+  }
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      flatten(obj[i], prefix ? `${prefix}[${i}]` : `[${i}]`, result);
     }
+    return result;
   }
-
-  // Remove fields
-  if (transform.unset) {
-    for (const key of transform.unset) {
-      delete result[key];
-    }
+  for (const [key, value] of Object.entries(obj)) {
+    const newKey = prefix ? `${prefix}.${key}` : key;
+    flatten(value, newKey, result);
   }
-
-  // Add/replace fields
-  if (transform.set) {
-    Object.assign(result, transform.set);
-  }
-
-  // Wrap entire body
-  if (transform.wrap) {
-    result = { [transform.wrap]: result };
-  }
-
   return result;
 }
 
+// ========================================================================
+// v2 Transform Engine — IR-Centric
+// ========================================================================
+
 /**
- * Apply response transforms to normalize a provider response.
- * Called BEFORE the base converter parses the response.
+ * Build provider request body from IR request.
+ *
+ * @param ir - The IR request object
+ * @param map - Field mapping configuration
+ * @returns Provider-specific request body
  */
-export function applyResponseTransform(
+export function buildProviderRequest(
+  ir: Record<string, unknown>,
+  map: RequestFieldMap | undefined
+): Record<string, unknown> {
+  if (!map) return { ...ir };
+
+  // 1. Flatten IR to dot-paths
+  const flatIR = flatten(ir);
+
+  // 2. Build provider body from fieldMap
+  const body: Record<string, unknown> = {};
+
+  // Pass through unmapped fields first (unless excluded)
+  const excluded = new Set(map.exclude || []);
+  for (const [irPath, value] of Object.entries(flatIR)) {
+    if (excluded.has(irPath)) continue;
+    if (map.fieldMap && irPath in map.fieldMap) {
+      // Mapped field → use provider field name
+      setPath(body, map.fieldMap[irPath], value);
+    } else {
+      // Unmapped field → pass through as-is
+      setPath(body, irPath, value);
+    }
+  }
+
+  // 3. Add static fields
+  if (map.static) {
+    for (const [key, value] of Object.entries(map.static)) {
+      setPath(body, key, value);
+    }
+  }
+
+  // 4. Wrap if needed
+  if (map.wrap) {
+    return { [map.wrap]: body };
+  }
+
+  return body;
+}
+
+/**
+ * Parse provider response into IR response shape.
+ *
+ * @param raw - Provider raw response
+ * @param map - Field mapping configuration
+ * @returns Object shaped like IRResponse (or raw for base converter to handle)
+ */
+export function parseProviderResponse(
   raw: unknown,
-  transform: ResponseTransform | undefined
-): unknown {
-  if (!transform || !raw || typeof raw !== "object") return raw;
+  map: ResponseFieldMap | undefined
+): Record<string, unknown> {
+  if (!map || !raw || typeof raw !== "object") {
+    return raw as Record<string, unknown>;
+  }
 
   let data = raw as Record<string, unknown>;
 
-  // Unwrap from nested field
-  if (transform.unwrap) {
-    const unwrapped = getPath(data, transform.unwrap);
+  // 1. Unwrap if needed
+  if (map.unwrap) {
+    const unwrapped = getPath(data, map.unwrap);
     if (unwrapped && typeof unwrapped === "object") {
       data = unwrapped as Record<string, unknown>;
     }
   }
 
-  // Extract fields by path
-  if (transform.extract) {
-    for (const [target, sourcePath] of Object.entries(transform.extract)) {
-      const value = getPath(data, sourcePath);
+  // 2. Build IR-shaped result from fieldMap
+  const ir: Record<string, unknown> = {};
+
+  if (map.fieldMap) {
+    for (const [providerPath, irPath] of Object.entries(map.fieldMap)) {
+      const value = getPath(data, providerPath);
       if (value !== undefined) {
-        data[target] = value;
+        setPath(ir, irPath, value);
       }
     }
   }
 
-  // Construct standard response from extracted fields
-  if (transform.construct) {
-    const c = transform.construct;
-    return {
-      id: getPath(data, c.id || "id") || crypto.randomUUID(),
-      model: getPath(data, c.model || "model") || "unknown",
-      choices: [{
-        index: 0,
-        message: {
-          role: "assistant",
-          content: getPath(data, c.content || "choices[0].message.content") || "",
-        },
-        finish_reason: getPath(data, c.finishReason || "choices[0].finish_reason") || "stop",
-      }],
-      usage: {
-        prompt_tokens: getPath(data, c.promptTokens || "usage.prompt_tokens") || 0,
-        completion_tokens: getPath(data, c.completionTokens || "usage.completion_tokens") || 0,
-        total_tokens: getPath(data, c.totalTokens || "usage.total_tokens") || 0,
-      },
-    };
+  // 3. Add static fields
+  if (map.static) {
+    for (const [key, value] of Object.entries(map.static)) {
+      setPath(ir, key, value);
+    }
   }
 
-  return data;
+  return ir;
 }
 
 /**
- * Apply stream chunk transforms.
- * Returns a normalized chunk compatible with base protocol parsing.
+ * Parse provider stream chunk into IR stream event.
+ *
+ * @param chunk - Provider raw chunk
+ * @param map - Stream field mapping
+ * @returns Normalized chunk or null if done
  */
-export function applyStreamTransform(
+export function parseStreamChunk(
   chunk: unknown,
-  transform: StreamTransform | undefined
-): unknown {
-  if (!transform || !chunk || typeof chunk !== "object") return chunk;
+  map: StreamFieldMap | undefined
+): Record<string, unknown> | null {
+  if (!map || !chunk || typeof chunk !== "object") {
+    return chunk as Record<string, unknown>;
+  }
 
   const data = chunk as Record<string, unknown>;
 
   // Check done marker
-  if (transform.doneMarker) {
+  if (map.doneMarker) {
     const raw = JSON.stringify(data);
-    if (raw.includes(transform.doneMarker)) {
-      return {}; // Empty chunk signals end
+    if (raw.includes(map.doneMarker)) {
+      return null; // null signals end
     }
   }
 
-  // If contentPath is specified, construct a standard delta chunk
-  if (transform.contentPath) {
-    const content = getPath(data, transform.contentPath);
-    if (content !== undefined) {
-      return {
-        choices: [{
-          index: 0,
-          delta: { content: String(content) },
-        }],
-      };
+  // Build normalized chunk
+  const normalized: Record<string, unknown> = {};
+
+  if (map.textDeltaPath) {
+    const text = getPath(data, map.textDeltaPath);
+    if (text !== undefined) {
+      normalized.choices = [{
+        index: 0,
+        delta: { content: String(text) },
+      }];
     }
   }
 
-  // If usagePath is specified, construct a usage chunk
-  if (transform.usagePath) {
-    const usage = getPath(data, transform.usagePath);
+  if (map.usagePath) {
+    const usage = getPath(data, map.usagePath);
     if (usage && typeof usage === "object") {
-      return { usage };
+      normalized.usage = usage;
     }
   }
 
-  return data;
+  if (map.finishReasonPath) {
+    const reason = getPath(data, map.finishReasonPath);
+    if (reason !== undefined) {
+      normalized.choices = normalized.choices || [{}];
+      (normalized.choices as Record<string, unknown>[])[0].finish_reason = reason;
+    }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : data;
+}
+
+// ========================================================================
+// Backward Compatibility — v1 aliases
+// ========================================================================
+
+/** @deprecated Use buildProviderRequest */
+export function applyRequestTransform(
+  body: Record<string, unknown>,
+  transform: { wrap?: string; set?: Record<string, unknown>; rename?: Record<string, string>; unset?: string[] } | undefined
+): Record<string, unknown> {
+  if (!transform) return body;
+
+  const map: RequestFieldMap = {};
+  if (transform.wrap) map.wrap = transform.wrap;
+  if (transform.set) map.static = transform.set;
+  if (transform.unset) map.exclude = transform.unset;
+  if (transform.rename) {
+    map.fieldMap = {};
+    for (const [oldKey, newKey] of Object.entries(transform.rename)) {
+      map.fieldMap[oldKey] = newKey;
+    }
+  }
+
+  return buildProviderRequest(body, map);
+}
+
+/** @deprecated Use parseProviderResponse */
+export function applyResponseTransform(
+  raw: unknown,
+  transform: { unwrap?: string; extract?: Record<string, string>; construct?: Record<string, string> } | undefined
+): unknown {
+  if (!transform) return raw;
+
+  const map: ResponseFieldMap = {};
+  if (transform.unwrap) map.unwrap = transform.unwrap;
+  if (transform.extract) {
+    map.fieldMap = {};
+    for (const [target, source] of Object.entries(transform.extract)) {
+      map.fieldMap[source] = target;
+    }
+  }
+
+  return parseProviderResponse(raw, map);
+}
+
+/** @deprecated Use parseStreamChunk */
+export function applyStreamTransform(
+  chunk: unknown,
+  transform: { contentPath?: string; usagePath?: string; doneMarker?: string } | undefined
+): unknown {
+  if (!transform) return chunk;
+
+  const map: StreamFieldMap = {};
+  if (transform.contentPath) map.textDeltaPath = transform.contentPath;
+  if (transform.usagePath) map.usagePath = transform.usagePath;
+  if (transform.doneMarker) map.doneMarker = transform.doneMarker;
+
+  return parseStreamChunk(chunk, map);
 }

@@ -517,9 +517,28 @@ export default function ProvidersPanel() {
             <textarea
               className="min-h-[200px] w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
               placeholder={JSON.stringify({
-                request: { wrap: "input", set: { temperature: 0.7 }, rename: { max_tokens: "maxTokens" } },
-                response: { unwrap: "output", construct: { content: "text", model: "model_id" } },
-                stream: { contentPath: "delta.text", doneMarker: "[DONE]" }
+                request: {
+                  wrap: "input",
+                  fieldMap: {
+                    "model": "model_id",
+                    "generation.maxTokens": "max_tokens",
+                    "messages": "chat_history"
+                  },
+                  static: { version: "v1" }
+                },
+                response: {
+                  unwrap: "output",
+                  fieldMap: {
+                    "output.text": "choices[0].message.content",
+                    "output.model_id": "model",
+                    "output.usage.prompt_tokens": "usage.promptTokens"
+                  }
+                },
+                stream: {
+                  textDeltaPath: "delta.text",
+                  usagePath: "usage",
+                  doneMarker: "[DONE]"
+                }
               }, null, 2)}
               value={form.transformsJson}
               onChange={(e) => setForm({ ...form, transformsJson: e.target.value })}
