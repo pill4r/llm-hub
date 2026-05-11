@@ -30,7 +30,9 @@ export type ValueExpr =
   | ValueMap
   | ValueIf
   | ValueSwitch
-  | string | number | boolean | null;
+  | string | number | boolean | null
+  | ValueExpr[]
+  | { [key: string]: ValueExpr };
 
 export interface Condition {
   $eq?: [unknown, unknown];
@@ -357,7 +359,7 @@ export function parseStreamChunk(
 }
 
 // ========================================================================
-// Backward Compatibility — v1/v2 aliases
+// Backward Compatibility — v1/v2 aliases (deprecated, will be removed)
 // ========================================================================
 
 /** @deprecated Use buildProviderRequest with RequestTransform */
@@ -371,13 +373,14 @@ export function applyRequestTransform(
   if (transform.wrap) req.wrap = transform.wrap;
 
   // Convert rename to body fieldMap
-  for (const [key, val] of Object.entries(body)) {
+  for (const key of Object.keys(body)) {
+    const val = body[key];
     const outKey = transform.rename?.[key] ?? key;
     req.body[outKey] = { $literal: val };
   }
   if (transform.set) {
-    for (const [key, val] of Object.entries(transform.set)) {
-      req.body[key] = { $literal: val };
+    for (const key of Object.keys(transform.set)) {
+      req.body[key] = { $literal: transform.set[key] };
     }
   }
   if (transform.unset) req.remove = transform.unset;
@@ -395,7 +398,8 @@ export function applyResponseTransform(
   const resp: ResponseTransform = { body: {} };
   if (transform.unwrap) resp.unwrap = transform.unwrap;
   if (transform.extract) {
-    for (const [target, source] of Object.entries(transform.extract)) {
+    for (const target of Object.keys(transform.extract)) {
+      const source = transform.extract[target];
       resp.body[target] = { $path: source };
     }
   }
@@ -413,7 +417,7 @@ export function applyStreamTransform(
   const st: StreamTransform = { doneMarker: transform.doneMarker };
   if (transform.contentPath) {
     st.default = {
-      choices: { $literal: [{ index: 0, delta: { content: { $path: transform.contentPath } } }] }
+      choices: [{ index: 0, delta: { content: { $path: transform.contentPath } } }]
     };
   }
 

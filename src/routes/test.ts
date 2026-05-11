@@ -7,27 +7,38 @@
 
 import { Hono } from "hono";
 import { authMiddleware } from "../middleware/auth";
-import { registry } from "../core/converter";
-import { forwardToProvider, resolveTarget } from "../core/gateway";
+import { forwardToProvider } from "../core/gateway";
+import { providerResponseToIR } from "../lib/provider-engine";
+import type { ProviderInstanceConfig } from "../lib/provider-engine";
 
 const testApp = new Hono<{ Bindings: { KV: KVNamespace } }>();
 
 testApp.get("/", (c) => c.json({ tests: ["/test/opencodego-openai", "/test/opencodego-anthropic"] }));
 
 // ========================================================================
+// Helper: Create OpenCode Go provider config
+// ========================================================================
+
+function createOpenCodeGoConfig(): ProviderInstanceConfig {
+  return {
+    providerId: "opencodego",
+    providerName: "OpenCode Go",
+    format: "openai",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    models: ["claude-sonnet-4"],
+  };
+}
+
+// ========================================================================
 // Test 1: OpenAI Consumer format -> OpenCode Go Provider
 // ========================================================================
 
 testApp.post("/opencodego-openai", authMiddleware(), async (c) => {
-  const keyRecord = c.get("keyRecord");
   const providerKeys = c.get("providerKeys");
-
-  const ConverterClass = registry.get("opencodego");
-  if (!ConverterClass) return c.json({ error: "opencodego provider not registered" }, 500);
-
-  const converter = new ConverterClass();
   const pk = providerKeys["opencodego"];
   if (!pk) return c.json({ error: "No opencodego key configured" }, 400);
+
+  const config = createOpenCodeGoConfig();
 
   // Build an IR request (simulating OpenAI consumer parsing)
   const irRequest = {
@@ -40,14 +51,14 @@ testApp.post("/opencodego-openai", authMiddleware(), async (c) => {
   };
 
   try {
-    const resp = await forwardToProvider(converter, irRequest, pk.apiKey);
+    const resp = await forwardToProvider(config, irRequest, pk.apiKey);
     const body = await resp.json();
 
     return c.json({
       test: "OpenAI Consumer -> OpenCode Go Provider",
       status: resp.status,
       providerResponse: body,
-      irResponse: converter.responseFromProvider(body),
+      irResponse: providerResponseToIR(body, config),
     });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
@@ -60,13 +71,10 @@ testApp.post("/opencodego-openai", authMiddleware(), async (c) => {
 
 testApp.post("/opencodego-anthropic", authMiddleware(), async (c) => {
   const providerKeys = c.get("providerKeys");
-
-  const ConverterClass = registry.get("opencodego");
-  if (!ConverterClass) return c.json({ error: "opencodego provider not registered" }, 500);
-
-  const converter = new ConverterClass();
   const pk = providerKeys["opencodego"];
   if (!pk) return c.json({ error: "No opencodego key configured" }, 400);
+
+  const config = createOpenCodeGoConfig();
 
   // Build an IR request (simulating Anthropic consumer parsing)
   const irRequest = {
@@ -79,14 +87,14 @@ testApp.post("/opencodego-anthropic", authMiddleware(), async (c) => {
   };
 
   try {
-    const resp = await forwardToProvider(converter, irRequest, pk.apiKey);
+    const resp = await forwardToProvider(config, irRequest, pk.apiKey);
     const body = await resp.json();
 
     return c.json({
       test: "Anthropic Consumer -> OpenCode Go Provider",
       status: resp.status,
       providerResponse: body,
-      irResponse: converter.responseFromProvider(body),
+      irResponse: providerResponseToIR(body, config),
     });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
@@ -99,13 +107,10 @@ testApp.post("/opencodego-anthropic", authMiddleware(), async (c) => {
 
 testApp.post("/opencodego-tools", authMiddleware(), async (c) => {
   const providerKeys = c.get("providerKeys");
-
-  const ConverterClass = registry.get("opencodego");
-  if (!ConverterClass) return c.json({ error: "opencodego provider not registered" }, 500);
-
-  const converter = new ConverterClass();
   const pk = providerKeys["opencodego"];
   if (!pk) return c.json({ error: "No opencodego key configured" }, 400);
+
+  const config = createOpenCodeGoConfig();
 
   const irRequest = {
     model: "claude-sonnet-4",
@@ -131,14 +136,14 @@ testApp.post("/opencodego-tools", authMiddleware(), async (c) => {
   };
 
   try {
-    const resp = await forwardToProvider(converter, irRequest, pk.apiKey);
+    const resp = await forwardToProvider(config, irRequest, pk.apiKey);
     const body = await resp.json();
 
     return c.json({
       test: "Tools -> OpenCode Go Provider",
       status: resp.status,
       providerResponse: body,
-      irResponse: converter.responseFromProvider(body),
+      irResponse: providerResponseToIR(body, config),
     });
   } catch (err) {
     return c.json({ error: String(err) }, 500);

@@ -1,22 +1,23 @@
 /**
  * Provider Resolver
  *
- * Resolves providerId to converter + config, supporting both built-in and dynamic providers.
+ * Resolves providerId to ProviderInstanceConfig, supporting both built-in and dynamic providers.
+ * Replaces the old converter-based resolution with pure configuration.
  */
 
-import { registry, type BaseConverter } from "../core/converter";
-import { OpenAIConverter } from "../providers/openai/converter";
-import { AnthropicConverter } from "../providers/anthropic/converter";
+import {
+  getBuiltinFormat,
+  listBuiltinFormats,
+  type ProviderInstanceConfig,
+} from "./provider-engine";
 import {
   parseProviderConfig,
   getDefaultCapabilities,
-  buildEndpoint,
-  buildAuthHeaders,
   type ProviderConfig,
 } from "./provider-config";
 
 export interface ResolvedProvider {
-  converter: BaseConverter;
+  config: ProviderInstanceConfig;
   providerId: string;
   /** Provider API key */
   apiKey: string;
@@ -25,7 +26,7 @@ export interface ResolvedProvider {
   /** Provider base URL (for dynamic providers) */
   baseUrl?: string;
   /** Full provider config (for dynamic providers) */
-  config?: ProviderConfig;
+  dynamicConfig?: ProviderConfig;
 }
 
 export interface ResolveError {
@@ -43,12 +44,17 @@ export async function resolveProviderById(
   providerId: string,
   kv: KVNamespace
 ): Promise<ResolveResult> {
-  // 1. Try built-in registry
-  const BuiltInClass = registry.get(providerId);
-  if (BuiltInClass) {
+  // 1. Try built-in formats
+  const builtinFormat = getBuiltinFormat(providerId);
+  if (builtinFormat) {
     return {
       ok: true,
-      converter: new BuiltInClass(),
+      config: {
+        providerId,
+        providerName: builtinFormat.name,
+        format: providerId,
+        models: [], // Will be populated by caller if needed
+      },
       providerId,
       apiKey: "", // Will be filled by caller
       model: "",
@@ -87,15 +93,15 @@ async function resolveDynamicProvider(
     const cfg = configs.find((c) => c.providerId === providerId);
     if (!cfg) return null;
 
-    const converter = createConverterFromConfig(cfg);
+    const instanceConfig = createInstanceConfigFromDynamic(cfg);
     return {
       ok: true,
-      converter,
+      config: instanceConfig,
       providerId,
       apiKey: "", // Filled by caller
       model: "",
       baseUrl: cfg.baseUrl,
-      config: cfg,
+      dynamicConfig: cfg,
     };
   } catch {
     return null;
@@ -103,36 +109,25 @@ async function resolveDynamicProvider(
 }
 
 /**
- * Create converter from provider config based on protocol.
+ * Create ProviderInstanceConfig from dynamic ProviderConfig.
  */
-function createConverterFromConfig(cfg: ProviderConfig): BaseConverter {
-  switch (cfg.protocol) {
-    case "openai-compatible": {
-      return new OpenAIConverter({
-        providerId: cfg.providerId,
-        providerName: cfg.providerId,
-        baseUrl: cfg.baseUrl,
-        chatEndpoint: cfg.chatEndpoint,
-        authType: cfg.authType,
-        capabilities: { ...getDefaultCapabilities("openai-compatible"), ...cfg.capabilities },
-        models: cfg.models.map((id) => ({ id, name: id })),
-        extraHeaders: cfg.extraHeaders,
-      });
-    }
-    case "anthropic-compatible": {
-      return new AnthropicConverter({
-        providerId: cfg.providerId,
-        providerName: cfg.providerId,
-        baseUrl: cfg.baseUrl,
-        apiVersion: cfg.chatEndpoint,
-        capabilities: { ...getDefaultCapabilities("anthropic-compatible"), ...cfg.capabilities },
-      });
-    }
-    case "custom":
-      throw new Error("custom protocol requires built-in converter registration");
-    default:
-      throw new Error(`Unknown protocol: ${cfg.protocol}`);
-  }
+function createInstanceConfigFromDynamic(cfg: ProviderConfig): ProviderInstanceConfig {
+  const format = cfg.protocol === "openai-compatible" ? "openai" :
+                 cfg.protocol === "anthropic-compatible" ? "anthropic" :
+                 cfg.protocol;
+
+  return {
+    providerId: cfg.providerId,
+    providerName: cfg.providerId,
+    format,
+    baseUrl: cfg.baseUrl,
+    endpoint: cfg.chatEndpoint,
+    auth: cfg.authType ? { type: cfg.authType } : undefined,
+    extraHeaders: cfg.extraHeaders,
+    models: cfg.models,
+    capabilities: cfg.capabilities,
+    transforms: cfg.transforms,
+  };
 }
 
 /**
@@ -158,4 +153,15 @@ export async function getProviderApiKey(
   } catch {
     return null;
   }
+}
+
+/**
+ * List all available provider formats (for admin UI).
+ */
+export function listProviderFormats(): { id: string; name: string; capabilities: Record<string, boolean> }[] {
+  return listBuiltinFormats().map((fmt) => ({
+    id: fmt.id,
+    name: fmt.name,
+    capabilities: fmt.capabilities as Record<string, boolean>,
+  }));
 }

@@ -4,7 +4,7 @@
  * Dynamic provider registration via KV. No code changes needed to add providers.
  */
 
-import type { ConverterCapabilities, ConverterOptions } from "../core/converter";
+import type { ConverterCapabilities } from "./provider-engine";
 import type { CustomTransforms } from "./transform-engine";
 
 /** Supported protocol types */

@@ -21,7 +21,7 @@ import {
   saveFormatTemplates,
   deleteFormatTemplate,
 } from "../lib/format-template";
-import { registry } from "../core/converter";
+import { listProviderFormats } from "../lib/provider-engine";
 import { adminAuthMiddleware } from "../middleware/admin-auth";
 
 const admin = new Hono<{ Bindings: { KV: KVNamespace; ADMIN_TOKEN: string } }>();
@@ -107,16 +107,13 @@ admin.get("/", async (c) => {
   // Provider-specific converters (deepseek, opencodego) extend these, they are NOT
   // separate formats. Users configure a provider by picking one of these formats
   // and providing their own baseUrl + apiKey.
-  const CORE_FORMATS = ["openai", "anthropic"];
-  const supportedFormats = registry.list()
-    .filter((r) => CORE_FORMATS.includes(r.id))
-    .map((r) => ({
-      providerId: r.id,
-      providerName: r.name,
-      protocol: r.id === "anthropic" ? "anthropic-compatible" : "openai-compatible",
-      source: "format",
-      capabilities: r.capabilities,
-    }));
+  const supportedFormats = listProviderFormats().map((fmt) => ({
+    providerId: fmt.id,
+    providerName: fmt.name,
+    protocol: fmt.id === "anthropic" ? "anthropic-compatible" : "openai-compatible",
+    source: "format",
+    capabilities: fmt.capabilities,
+  }));
 
   // User-configured providers (from KV)
   const configuredProviders = configs.map((cfg) => ({

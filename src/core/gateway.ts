@@ -5,8 +5,15 @@
  * This file only contains provider forwarding and stream normalization.
  */
 
-import type { BaseConverter } from "./converter";
 import type { IRRequest, StreamEvent } from "./ir";
+import type { ProviderInstanceConfig } from "../lib/provider-engine";
+import {
+  providerRequestToBody,
+  buildProviderEndpoint,
+  buildProviderHeaders,
+  providerStreamChunkToEvent,
+  isStreamEndMarker,
+} from "../lib/provider-engine";
 
 export interface GatewayConfig {
   timeout: number;
@@ -48,14 +55,14 @@ export function resolveTarget(
  * Forward IR request to provider.
  */
 export async function forwardToProvider(
-  converter: BaseConverter,
+  config: ProviderInstanceConfig,
   irRequest: IRRequest,
   apiKey: string,
-  config: GatewayConfig = DEFAULT_CONFIG
+  gatewayConfig: GatewayConfig = DEFAULT_CONFIG
 ): Promise<Response> {
-  const providerBody = converter.requestToProvider(irRequest);
-  const endpoint = converter.getChatCompletionEndpoint(irRequest.model);
-  const headers = converter.getHeaders(apiKey);
+  const providerBody = providerRequestToBody(irRequest, config);
+  const endpoint = buildProviderEndpoint(config, irRequest.model);
+  const headers = buildProviderHeaders(config, apiKey);
 
   return fetch(endpoint, {
     method: "POST",
@@ -68,7 +75,7 @@ export async function forwardToProvider(
  * Stream events from provider, normalizing SSE to IR StreamEvent.
  */
 export async function* streamEventsFromProvider(
-  converter: BaseConverter,
+  config: ProviderInstanceConfig,
   response: Response
 ): AsyncGenerator<{ event: StreamEvent | null; raw: Record<string, unknown> }, void, unknown> {
   const reader = response.body?.getReader();
@@ -92,9 +99,6 @@ export async function* streamEventsFromProvider(
 
         // Anthropic-style typed SSE: "event: xxx" then "data: xxx"
         if (trimmed.startsWith("event: ")) {
-          // Store event type for next data line
-          // Some converters need this state (like Anthropic)
-          // We pass the full line to the converter
           continue;
         }
 
@@ -107,13 +111,12 @@ export async function* streamEventsFromProvider(
 
         try {
           const chunk = JSON.parse(data);
-          const event = converter.streamEventFromProvider(chunk);
+          const event = providerStreamChunkToEvent(chunk, config);
           if (event) {
             yield { event, raw: chunk };
           }
 
-          // Check if converter signals stream end
-          if (converter.isStreamEnd(chunk)) {
+          if (isStreamEndMarker(chunk, config)) {
             return;
           }
         } catch {

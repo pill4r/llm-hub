@@ -3,7 +3,7 @@
  *
  * Cloudflare Workers gateway with hub-and-spoke IR architecture.
  * Consumer plugins: OpenAI, Anthropic (extensible)
- * Provider plugins: OpenAI, DeepSeek, Anthropic (extensible)
+ * Provider formats: OpenAI, Anthropic (extensible via transforms)
  */
 
 import { Hono } from "hono";
@@ -12,16 +12,18 @@ import { authMiddleware } from "./middleware/auth";
 import { rateLimitMiddleware } from "./middleware/rate-limiter";
 import { billingMiddleware } from "./middleware/billing";
 import { forwardToProvider, resolveTarget, streamEventsFromProvider } from "./core/gateway";
-import { registry } from "./core/converter";
-import type { BaseConverter } from "./core/converter";
 import type { KeyRecord, ProviderKeyRecord } from "./middleware/auth";
 import { consumerRegistry } from "./consumers";
-import type { ConsumerPlugin } from "./consumers";
 import { detectClient } from "./lib/client-detector";
-import { resolveProviderById, getProviderApiKey } from "./lib/provider-resolver";
+import { resolveProviderById, getProviderApiKey, listProviderFormats } from "./lib/provider-resolver";
 import { LoadBalancer, parseProviderKeys } from "./lib/load-balancer";
+import {
+  providerResponseToIR,
+  parseProviderError,
+  getProviderCapabilities,
+  type ProviderInstanceConfig,
+} from "./lib/provider-engine";
 
-import "./providers";
 import testApp from "./routes/test";
 import adminProviders from "./routes/admin-providers";
 import adminKeys from "./routes/admin-keys";
@@ -33,6 +35,8 @@ const app = new Hono<{ Bindings: { KV: KVNamespace; DB: D1Database } }>();
 app.route("/test", testApp);
 app.route("/admin/providers", adminProviders);
 app.route("/admin/keys", adminKeys);
+
+// ========================================================================
 // CORS
 // ========================================================================
 
@@ -53,7 +57,7 @@ app.get("/", (c) =>
     name: "llm-hub",
     version: "0.1.2",
     consumers: consumerRegistry.list(),
-    providers: registry.list(),
+    providers: listProviderFormats(),
   })
 );
 
@@ -61,19 +65,15 @@ app.get("/v1/models", authMiddleware(), async (c) => {
   const keyRecord = c.get("keyRecord") as KeyRecord;
   const kv = c.env.KV;
 
-  // Built-in providers
-  const formats = registry.list().filter((fmt) =>
+  // Built-in formats
+  const formats = listProviderFormats().filter((fmt) =>
     keyRecord.allowedProviders.length === 0 || keyRecord.allowedProviders.includes(fmt.id)
   );
 
   const models: { id: string; object: string; owned_by: string }[] = [];
   for (const fmt of formats) {
-    const ConverterClass = registry.get(fmt.id);
-    if (!ConverterClass) continue;
-    const conv = new ConverterClass();
-    for (const m of conv.getSupportedModels()) {
-      models.push({ id: m.id, object: "model", owned_by: fmt.name });
-    }
+    // Built-in formats don't have predefined models; they're determined by the user's key config
+    // For now, we skip built-in format models unless explicitly configured
   }
 
   // Dynamic providers
@@ -116,22 +116,22 @@ app.post("/v1/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), 
   const resolved = await resolveProvider(c, model);
   if (!resolved.ok) return resolved.response;
 
-  const { converter, providerKeyRecord, providerId } = resolved;
+  const { providerConfig, providerKeyRecord, providerId } = resolved;
 
   // Override model if provider prefix was stripped
   irRequest.model = resolved.model || irRequest.model;
 
   // Override base URL if configured
   if (providerKeyRecord.baseUrl) {
-    converter.options.baseUrl = providerKeyRecord.baseUrl;
+    providerConfig.baseUrl = providerKeyRecord.baseUrl;
   }
 
   // Forward to provider
-  const providerResponse = await forwardToProvider(converter, irRequest, providerKeyRecord.apiKey);
+  const providerResponse = await forwardToProvider(providerConfig, irRequest, providerKeyRecord.apiKey);
 
   if (!providerResponse.ok) {
     const errBody = await providerResponse.json().catch(() => ({}));
-    const err = converter.parseError(errBody);
+    const err = parseProviderError(errBody, providerConfig);
     return c.json(consumer.buildError({
       ...err,
       message: `${err.message} (provider: ${providerId}, status: ${providerResponse.status})`,
@@ -139,7 +139,8 @@ app.post("/v1/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), 
   }
 
   // Streaming
-  if (consumer.isStreaming(body) && converter.capabilities.streaming) {
+  const capabilities = getProviderCapabilities(providerConfig);
+  if (consumer.isStreaming(body) && capabilities.streaming) {
     c.header("Content-Type", "text/event-stream");
     c.header("Cache-Control", "no-cache");
     c.header("Connection", "keep-alive");
@@ -150,7 +151,7 @@ app.post("/v1/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), 
       let totalCompletionTokens = 0;
 
       try {
-        for await (const { event } of streamEventsFromProvider(converter, providerResponse)) {
+        for await (const { event } of streamEventsFromProvider(providerConfig, providerResponse)) {
           if (!event) continue;
 
           if (event.type === "usage") {
@@ -191,7 +192,7 @@ app.post("/v1/*", authMiddleware(), rateLimitMiddleware(), billingMiddleware(), 
 
   // Non-streaming
   const responseBody = await providerResponse.json();
-  const irResponse = converter.responseFromProvider(responseBody);
+  const irResponse = providerResponseToIR(responseBody, providerConfig);
 
   if (irResponse.usage) {
     c.set("usage", irResponse.usage);
@@ -213,7 +214,7 @@ interface ResolveError {
 
 interface ResolveSuccess {
   ok: true;
-  converter: BaseConverter;
+  providerConfig: ProviderInstanceConfig;
   providerKeyRecord: ProviderKeyRecord;
   providerId: string;
   model: string;
@@ -257,7 +258,7 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
     };
   }
 
-  const converter = resolved.converter;
+  let providerConfig = resolved.config;
 
   // Get provider API key (with load balancing)
   const keyData = providerKeys[providerId];
@@ -298,28 +299,19 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
   }
 
   // For dynamic providers, apply config overrides
-  if (resolved.config) {
-    converter.options.baseUrl = resolved.config.baseUrl;
-    if (resolved.config.chatEndpoint) {
-      converter.options.chatEndpoint = resolved.config.chatEndpoint;
-    }
-    if (resolved.config.authType) {
-      converter.options.authType = resolved.config.authType;
-    }
-    if (resolved.config.capabilities) {
-      Object.assign(converter.capabilities, resolved.config.capabilities);
-    }
-    if (resolved.config.extraHeaders) {
-      converter.options.extraHeaders = resolved.config.extraHeaders;
-    }
-    if (resolved.config.transforms) {
-      converter.options.transforms = resolved.config.transforms;
-    }
+  if (resolved.dynamicConfig) {
+    const cfg = resolved.dynamicConfig;
+    if (cfg.baseUrl) providerConfig.baseUrl = cfg.baseUrl;
+    if (cfg.chatEndpoint) providerConfig.endpoint = cfg.chatEndpoint;
+    if (cfg.authType) providerConfig.auth = { type: cfg.authType };
+    if (cfg.capabilities) providerConfig.capabilities = { ...providerConfig.capabilities, ...cfg.capabilities };
+    if (cfg.extraHeaders) providerConfig.extraHeaders = cfg.extraHeaders;
+    if (cfg.transforms) providerConfig.transforms = cfg.transforms;
   }
 
   // Override with user's configured baseUrl if set
   if (providerKeyRecord.baseUrl) {
-    converter.options.baseUrl = providerKeyRecord.baseUrl;
+    providerConfig.baseUrl = providerKeyRecord.baseUrl;
   }
 
   // Check model permission
@@ -343,7 +335,7 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
   c.set("providerId", providerId);
   c.set("model", resolvedModel);
 
-  return { ok: true, converter, providerKeyRecord, providerId, model: resolvedModel };
+  return { ok: true, providerConfig, providerKeyRecord, providerId, model: resolvedModel };
 }
 
 // ========================================================================
