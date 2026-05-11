@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -45,6 +45,7 @@ export default function KeysPanel() {
   const [newToken, setNewToken] = useState("")
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const deletingRef = useRef(false)
 
   const fetchKeys = useCallback(async () => {
     setLoading(true)
@@ -88,6 +89,8 @@ export default function KeysPanel() {
   }
 
   async function handleDelete(id: string) {
+    if (deletingRef.current) return
+    deletingRef.current = true
     try {
       const resp = await apiFetch(`/admin/keys/${encodeURIComponent(id)}`, { method: "DELETE" })
       const data = await resp.json().catch(() => ({}))
@@ -106,6 +109,8 @@ export default function KeysPanel() {
     } catch (e: any) {
       alert(e.message)
       setDeleteTarget(null)
+    } finally {
+      deletingRef.current = false
     }
   }
 
