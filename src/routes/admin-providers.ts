@@ -15,12 +15,6 @@ import {
   getAllProviderConfigs,
   saveProviderConfigs,
 } from "../lib/provider-config";
-import {
-  validateFormatTemplate,
-  getAllFormatTemplates,
-  saveFormatTemplates,
-  deleteFormatTemplate,
-} from "../lib/format-template";
 import { listProviderFormats } from "../lib/provider-resolver";
 import { adminAuthMiddleware } from "../middleware/admin-auth";
 
@@ -413,55 +407,27 @@ admin.post("/:providerId/fetch-models", async (c) => {
 });
 
 // ========================================================================
-// Format Template Management
+// Format Template Management (DEPRECATED - removed with transform engine)
 // ========================================================================
 
-/** List all uploaded format templates */
+/** List all uploaded format templates - returns empty list */
 admin.get("/formats", async (c) => {
-  const kv = c.env.KV;
-  const formats = await getAllFormatTemplates(kv);
-  return c.json({ formats });
+  return c.json({ formats: [] });
 });
 
-/** Upload / update a format template */
+/** Upload / update a format template - disabled */
 admin.post("/formats", async (c) => {
-  const kv = c.env.KV;
-  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
-
-  const format = validateFormatTemplate(body);
-  if (!format) {
-    return c.json({ error: { message: "Invalid format template", type: "invalid_request" } }, 400);
-  }
-
-  const formats = await getAllFormatTemplates(kv);
-  const existingIndex = formats.findIndex((f) => f.formatId === format.formatId);
-
-  if (existingIndex >= 0) {
-    formats[existingIndex] = format;
-  } else {
-    formats.push(format);
-  }
-
-  await saveFormatTemplates(kv, formats);
-
   return c.json({
-    success: true,
-    formatId: format.formatId,
-    action: existingIndex >= 0 ? "updated" : "created",
-  });
+    error: {
+      message: "Format templates have been removed. Add new providers by implementing a ProviderPlugin in src/providers/.",
+      type: "not_supported",
+    },
+  }, 410);
 });
 
-/** Delete a format template */
+/** Delete a format template - disabled */
 admin.delete("/formats/:formatId", async (c) => {
-  const kv = c.env.KV;
-  const formatId = c.req.param("formatId");
-
-  const deleted = await deleteFormatTemplate(kv, formatId);
-  if (!deleted) {
-    return c.json({ error: { message: `Format "${formatId}" not found`, type: "not_found" } }, 404);
-  }
-
-  return c.json({ success: true, deleted: formatId });
+  return c.json({ success: true, deleted: c.req.param("formatId") });
 });
 
 export default admin;

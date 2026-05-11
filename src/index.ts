@@ -306,7 +306,6 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
     if (cfg.authType) providerConfig.auth = { type: cfg.authType };
     if (cfg.capabilities) providerConfig.capabilities = { ...providerConfig.capabilities, ...cfg.capabilities };
     if (cfg.extraHeaders) providerConfig.extraHeaders = cfg.extraHeaders;
-    if (cfg.transforms) providerConfig.transforms = cfg.transforms;
   }
 
   // Override with user's configured baseUrl if set

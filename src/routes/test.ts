@@ -122,9 +122,9 @@ testApp.post("/opencodego-tools", authMiddleware(), async (c) => {
       {
         name: "get_weather",
         description: "Get weather for a location",
-        parameters: {
-          type: "object",
-          properties: {
+    parameters: {
+      type: "object" as const,
+      properties: {
             location: { type: "string" },
             unit: { type: "string", enum: ["celsius", "fahrenheit"] },
           },

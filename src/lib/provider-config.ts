@@ -5,7 +5,6 @@
  */
 
 import type { ConverterCapabilities } from "./provider-engine";
-import type { CustomTransforms } from "./transform-engine";
 
 /** Supported protocol types */
 export type ProviderProtocol = "openai-compatible" | "anthropic-compatible" | "custom";
@@ -26,8 +25,6 @@ export interface ProviderConfig {
   capabilities?: Partial<ConverterCapabilities>;
   /** Extra headers to send with every request */
   extraHeaders?: Record<string, string>;
-  /** Custom declarative transforms for non-standard APIs */
-  transforms?: CustomTransforms;
   /** When this config was created */
   createdAt: string;
 }
@@ -153,7 +150,6 @@ export function parseProviderConfig(raw: unknown): ProviderConfig | null {
       : [],
     capabilities: r.capabilities as Partial<ConverterCapabilities> | undefined,
     extraHeaders: r.extraHeaders as Record<string, string> | undefined,
-    transforms: r.transforms as CustomTransforms | undefined,
     createdAt: String(r.createdAt || new Date().toISOString()),
   };
 }

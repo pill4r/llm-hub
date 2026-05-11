@@ -6,9 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { providerRequestToBody, providerResponseToIR } from "../provider-engine";
-import { openaiTransform, anthropicTransform } from "../provider-transforms";
-import { parseStreamChunk } from "../transform-engine";
+import { providerRequestToBody, providerResponseToIR, providerStreamChunkToEvent } from "../provider-engine";
 import type { ProviderInstanceConfig } from "../provider-engine";
 import type { IRRequest, StreamEvent } from "../../core/ir";
 
@@ -39,10 +37,10 @@ function createAnthropicConsumerIR(): IRRequest {
 }
 
 // ========================================================================
-// Test 1: OpenAI Consumer → OpenAI Provider
+// Test 1: OpenAI Consumer -> OpenAI Provider
 // ========================================================================
 
-describe("OpenAI Consumer → OpenAI Provider", () => {
+describe("OpenAI Consumer -> OpenAI Provider", () => {
   const config: ProviderInstanceConfig = {
     providerId: "openai",
     providerName: "OpenAI",
@@ -85,7 +83,7 @@ describe("OpenAI Consumer → OpenAI Provider", () => {
 
     const ir = providerResponseToIR(providerResponse, config);
     expect(ir.choices).toHaveLength(1);
-    expect(ir.choices[0].message.content).toBe("Hi there!");
+    expect(ir.choices[0].message.content).toEqual([{ type: "text", text: "Hi there!" }]);
     expect(ir.choices[0].finishReason).toBe("stop");
     expect(ir.usage?.promptTokens).toBe(10);
     expect(ir.usage?.completionTokens).toBe(5);
@@ -94,10 +92,10 @@ describe("OpenAI Consumer → OpenAI Provider", () => {
 });
 
 // ========================================================================
-// Test 2: Anthropic Consumer → Anthropic Provider
+// Test 2: Anthropic Consumer -> Anthropic Provider
 // ========================================================================
 
-describe("Anthropic Consumer → Anthropic Provider", () => {
+describe("Anthropic Consumer -> Anthropic Provider", () => {
   const config: ProviderInstanceConfig = {
     providerId: "anthropic",
     providerName: "Anthropic",
@@ -133,17 +131,17 @@ describe("Anthropic Consumer → Anthropic Provider", () => {
     const ir = providerResponseToIR(providerResponse, config);
     expect(ir.choices).toHaveLength(1);
     expect(ir.choices[0].message.content).toEqual([{ type: "text", text: "Hi there!" }]);
-    expect(ir.choices[0].finishReason).toBe("end_turn");
+    expect(ir.choices[0].finishReason).toBe("stop");
     expect(ir.usage?.promptTokens).toBe(10);
     expect(ir.usage?.completionTokens).toBe(5);
   });
 });
 
 // ========================================================================
-// Test 3: OpenAI Consumer → Anthropic Provider (CROSS)
+// Test 3: OpenAI Consumer -> Anthropic Provider (CROSS)
 // ========================================================================
 
-describe("OpenAI Consumer → Anthropic Provider (CROSS)", () => {
+describe("OpenAI Consumer -> Anthropic Provider (CROSS)", () => {
   const config: ProviderInstanceConfig = {
     providerId: "anthropic",
     providerName: "Anthropic",
@@ -182,15 +180,15 @@ describe("OpenAI Consumer → Anthropic Provider (CROSS)", () => {
     // IR is format-agnostic, can be consumed by OpenAI consumer's buildResponse()
     expect(ir.choices).toHaveLength(1);
     expect(ir.choices[0].message.content).toEqual([{ type: "text", text: "Hello from Claude!" }]);
-    expect(ir.choices[0].finishReason).toBe("end_turn");
+    expect(ir.choices[0].finishReason).toBe("stop");
   });
 });
 
 // ========================================================================
-// Test 4: Anthropic Consumer → OpenAI Provider (CROSS)
+// Test 4: Anthropic Consumer -> OpenAI Provider (CROSS)
 // ========================================================================
 
-describe("Anthropic Consumer → OpenAI Provider (CROSS)", () => {
+describe("Anthropic Consumer -> OpenAI Provider (CROSS)", () => {
   const config: ProviderInstanceConfig = {
     providerId: "openai",
     providerName: "OpenAI",
@@ -236,7 +234,7 @@ describe("Anthropic Consumer → OpenAI Provider (CROSS)", () => {
     const ir = providerResponseToIR(providerResponse, config);
     // IR is format-agnostic, can be consumed by Anthropic consumer's buildResponse()
     expect(ir.choices).toHaveLength(1);
-    expect(ir.choices[0].message.content).toBe("Hello from GPT!");
+    expect(ir.choices[0].message.content).toEqual([{ type: "text", text: "Hello from GPT!" }]);
     expect(ir.choices[0].finishReason).toBe("stop");
   });
 });
@@ -246,7 +244,7 @@ describe("Anthropic Consumer → OpenAI Provider (CROSS)", () => {
 // ========================================================================
 
 describe("Stream Events Cross-Access", () => {
-  it("OpenAI stream chunk → IR (for Anthropic consumer)", () => {
+  it("OpenAI stream chunk -> IR (for Anthropic consumer)", () => {
     const chunk = {
       choices: [{
         index: 0,
@@ -254,21 +252,33 @@ describe("Stream Events Cross-Access", () => {
       }],
     };
 
-    const event = parseStreamChunk(chunk, openaiTransform.stream) as unknown as StreamEvent;
+    const config: ProviderInstanceConfig = {
+      providerId: "openai",
+      providerName: "OpenAI",
+      format: "openai",
+      models: ["gpt-4o"],
+    };
+    const event = providerStreamChunkToEvent(chunk, config);
 
     expect(event).not.toBeNull();
     expect(event!.type).toBe("text_delta");
     expect((event as any).delta).toBe("Hello");
   });
 
-  it("Anthropic stream chunk → IR (for OpenAI consumer)", () => {
+  it("Anthropic stream chunk -> IR (for OpenAI consumer)", () => {
     const chunk = {
       type: "content_block_delta",
       index: 0,
       delta: { text: "Hello" },
     };
 
-    const event = parseStreamChunk(chunk, anthropicTransform.stream) as unknown as StreamEvent;
+    const config: ProviderInstanceConfig = {
+      providerId: "anthropic",
+      providerName: "Anthropic",
+      format: "anthropic",
+      models: ["claude-3-sonnet"],
+    };
+    const event = providerStreamChunkToEvent(chunk, config);
 
     expect(event).not.toBeNull();
     expect(event!.type).toBe("text_delta");
@@ -281,7 +291,7 @@ describe("Stream Events Cross-Access", () => {
 // ========================================================================
 
 describe("Tools Cross-Access", () => {
-  it("OpenAI tools IR → Anthropic provider format", () => {
+  it("OpenAI tools IR -> Anthropic provider format", () => {
     const config: ProviderInstanceConfig = {
       providerId: "anthropic",
       providerName: "Anthropic",
@@ -301,7 +311,7 @@ describe("Tools Cross-Access", () => {
           required: ["location"],
         },
       }],
-      toolChoice: { type: "auto" },
+      toolChoice: { type: "auto" } as unknown as IRRequest["toolChoice"],
     };
 
     const body = providerRequestToBody(ir, config);
@@ -317,7 +327,7 @@ describe("Tools Cross-Access", () => {
     });
   });
 
-  it("Anthropic tools IR → OpenAI provider format", () => {
+  it("Anthropic tools IR -> OpenAI provider format", () => {
     const config: ProviderInstanceConfig = {
       providerId: "openai",
       providerName: "OpenAI",
@@ -337,7 +347,7 @@ describe("Tools Cross-Access", () => {
           required: ["location"],
         },
       }],
-      toolChoice: { type: "auto" },
+      toolChoice: { type: "auto" } as unknown as IRRequest["toolChoice"],
     };
 
     const body = providerRequestToBody(ir, config);

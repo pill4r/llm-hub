@@ -2,17 +2,13 @@
  * Provider Resolver
  *
  * Resolves providerId to ProviderInstanceConfig, supporting both built-in and dynamic providers.
- * Replaces the old converter-based resolution with pure configuration.
+ * Uses ProviderPlugin registry for built-in formats.
  */
 
-import {
-  getBuiltinFormat,
-  listBuiltinFormats,
-  type ProviderInstanceConfig,
-} from "./provider-engine";
+import { providerRegistry } from "../providers";
+import { type ProviderInstanceConfig } from "./provider-engine";
 import {
   parseProviderConfig,
-  getDefaultCapabilities,
   type ProviderConfig,
 } from "./provider-config";
 
@@ -44,14 +40,14 @@ export async function resolveProviderById(
   providerId: string,
   kv: KVNamespace
 ): Promise<ResolveResult> {
-  // 1. Try built-in formats
-  const builtinFormat = getBuiltinFormat(providerId);
-  if (builtinFormat) {
+  // 1. Try built-in formats via plugin registry
+  const plugin = providerRegistry.find(providerId);
+  if (plugin) {
     return {
       ok: true,
       config: {
         providerId,
-        providerName: builtinFormat.name,
+        providerName: plugin.name,
         format: providerId,
         models: [], // Will be populated by caller if needed
       },
@@ -126,7 +122,6 @@ function createInstanceConfigFromDynamic(cfg: ProviderConfig): ProviderInstanceC
     extraHeaders: cfg.extraHeaders,
     models: cfg.models,
     capabilities: cfg.capabilities,
-    transforms: cfg.transforms,
   };
 }
 
@@ -159,9 +154,9 @@ export async function getProviderApiKey(
  * List all available provider formats (for admin UI).
  */
 export function listProviderFormats(): { id: string; name: string; capabilities: Record<string, boolean> }[] {
-  return listBuiltinFormats().map((fmt) => ({
-    id: fmt.id,
-    name: fmt.name,
-    capabilities: fmt.capabilities as unknown as Record<string, boolean>,
+  return providerRegistry.list().map((p) => ({
+    id: p.id,
+    name: p.name,
+    capabilities: p.capabilities as unknown as Record<string, boolean>,
   }));
 }

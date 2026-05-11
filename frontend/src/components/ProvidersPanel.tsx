@@ -57,7 +57,6 @@ interface ProviderFormState {
   authType: string
   testApiKey: string
   chatEndpoint: string
-  transformsJson: string
 }
 
 export default function ProvidersPanel() {
@@ -66,7 +65,7 @@ export default function ProvidersPanel() {
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<ProviderFormState>({
     id: "", protocol: "openai-compatible", baseUrl: "", authType: "bearer",
-    testApiKey: "", chatEndpoint: "", transformsJson: "",
+    testApiKey: "", chatEndpoint: "",
   })
   const [models, setModels] = useState<string[]>([])
   const [newModelInput, setNewModelInput] = useState("")
@@ -76,7 +75,6 @@ export default function ProvidersPanel() {
   const [detailProvider, setDetailProvider] = useState<Provider | null>(null)
   const [modelTestStatus, setModelTestStatus] = useState<Record<string, "pending" | "ok" | "error">>({})
   const [modelLatency, setModelLatency] = useState<Record<string, number>>({})
-  const [transformsOpen, setTransformsOpen] = useState(false)
 
   const fetchProviders = useCallback(async () => {
     setLoading(true)
@@ -107,14 +105,6 @@ export default function ProvidersPanel() {
       autoFetchModels: false,
       models,
     }
-    if (form.transformsJson.trim()) {
-      try {
-        body.transforms = JSON.parse(form.transformsJson.trim())
-      } catch (e) {
-        setTestResult(t("test_failed", { error: "Invalid transforms JSON: " + (e as Error).message }))
-        return
-      }
-    }
     try {
       const resp = await apiFetch("/admin/providers", {
         method: "POST",
@@ -132,7 +122,7 @@ export default function ProvidersPanel() {
   }
 
   function resetForm() {
-    setForm({ id: "", protocol: "openai-compatible", baseUrl: "", authType: "bearer", testApiKey: "", chatEndpoint: "", transformsJson: "" })
+    setForm({ id: "", protocol: "openai-compatible", baseUrl: "", authType: "bearer", testApiKey: "", chatEndpoint: "" })
     setModels([])
     setNewModelInput("")
     setEditing(false)
@@ -181,9 +171,6 @@ export default function ProvidersPanel() {
         chatEndpoint: form.chatEndpoint || undefined,
         models: [modelId],
         autoFetchModels: false,
-      }
-      if (form.transformsJson.trim()) {
-        try { config.transforms = JSON.parse(form.transformsJson.trim()) } catch {}
       }
       const body: any = { apiKey: form.testApiKey, config }
       const resp = await apiFetch("/admin/providers/test", {
@@ -243,7 +230,6 @@ export default function ProvidersPanel() {
       authType: "bearer",
       testApiKey: "",
       chatEndpoint: "",
-      transformsJson: "",
     })
     setModels([])
     setNewModelInput("")
@@ -492,83 +478,14 @@ export default function ProvidersPanel() {
             </div>
           )}
 
-          {/* Custom Transforms Trigger */}
+          {/* Custom Transforms Trigger - REMOVED with transform engine */}
           <div className="mt-4 border-t border-border pt-4">
-            <Button variant="outline" size="sm" onClick={() => setTransformsOpen(true)}>
-              🛠️ {t("custom_transforms") || "Custom Protocol Transforms"}
-            </Button>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("transforms_hint") || "Declare how this provider deviates from the base protocol. Applied at runtime without code changes."}
+            <p className="text-sm text-muted-foreground">
+              To add a new protocol format, implement a ProviderPlugin in <code>src/providers/</code> and register it in <code>src/providers/index.ts</code>.
             </p>
           </div>
         </CardContent>
       </Card>
-
-      {/* Transforms Dialog */}
-      <Dialog open={transformsOpen} onOpenChange={(v) => !v && setTransformsOpen(false)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>🛠️ {t("custom_transforms") || "Custom Protocol Transforms"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              {t("transforms_hint") || "Declare how this provider deviates from the base protocol. Applied at runtime without code changes."}
-            </p>
-            <textarea
-              className="min-h-[200px] w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
-              placeholder={JSON.stringify({
-                request: {
-                  wrap: "input",
-                  fieldMap: {
-                    "model": "model_id",
-                    "generation.maxTokens": "max_tokens",
-                    "messages": "chat_history"
-                  },
-                  static: { version: "v1" }
-                },
-                response: {
-                  unwrap: "output",
-                  fieldMap: {
-                    "output.text": "choices[0].message.content",
-                    "output.model_id": "model",
-                    "output.usage.prompt_tokens": "usage.promptTokens"
-                  }
-                },
-                stream: {
-                  textDeltaPath: "delta.text",
-                  usagePath: "usage",
-                  doneMarker: "[DONE]"
-                }
-              }, null, 2)}
-              value={form.transformsJson}
-              onChange={(e) => setForm({ ...form, transformsJson: e.target.value })}
-            />
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => {
-                try {
-                  JSON.parse(form.transformsJson.trim())
-                  setTestResult("✅ Transforms JSON is valid")
-                } catch (e: any) {
-                  setTestResult(t("test_failed", { error: "Transforms JSON: " + e.message }))
-                }
-              }}>
-                Validate JSON
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, transformsJson: "" })}>
-                Clear
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setTransformsOpen(false)}>
-                Done
-              </Button>
-            </div>
-            {form.transformsJson.trim() && (
-              <p className="text-xs text-muted-foreground">
-                Transforms will be applied to {form.id || "this provider"} when saved.
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Detail Dialog */}
       <Dialog open={!!detailProvider} onOpenChange={(v) => !v && setDetailProvider(null)}>
