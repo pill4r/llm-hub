@@ -53,13 +53,13 @@ admin.get("/", async (c) => {
   const kv = c.env.KV;
   const ids = await getKeyIndex(kv);
 
-  const keys: ReturnType<typeof sanitizeKeyRecord>[] = [];
+  const keys: Record<string, ReturnType<typeof sanitizeKeyRecord>> = {};
   for (const id of ids) {
     const raw = await kv.get(`key:${id}`);
     if (!raw) continue;
     try {
       const record = JSON.parse(raw) as KeyRecord;
-      keys.push(sanitizeKeyRecord(record));
+      keys[id] = sanitizeKeyRecord(record);
     } catch { /* skip */ }
   }
 
