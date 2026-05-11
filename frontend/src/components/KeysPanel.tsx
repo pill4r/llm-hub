@@ -40,7 +40,7 @@ export default function KeysPanel() {
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({
     name: "", monthlyBudget: "0", rpm: "60", tpm: "100000",
-    allowedProviders: "", allowedModels: "", providerKeys: "{}"
+    allowedProviders: "", allowedModels: ""
   })
   const [newToken, setNewToken] = useState("")
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -71,7 +71,6 @@ export default function KeysPanel() {
       tpmLimit: parseInt(form.tpm) || 100000,
       allowedProviders: form.allowedProviders.split(",").map(s => s.trim()).filter(Boolean),
       allowedModels: form.allowedModels.split(",").map(s => s.trim()).filter(Boolean),
-      providerKeys: JSON.parse(form.providerKeys || "{}"),
     }
     try {
       const resp = await apiFetch("/admin/keys", {
@@ -81,7 +80,7 @@ export default function KeysPanel() {
       if (!resp.ok) throw new Error(await resp.text())
       const data = await resp.json()
       setNewToken(data.token || "")
-      setForm({ name: "", monthlyBudget: "0", rpm: "60", tpm: "100000", allowedProviders: "", allowedModels: "", providerKeys: "{}" })
+      setForm({ name: "", monthlyBudget: "0", rpm: "60", tpm: "100000", allowedProviders: "", allowedModels: "" })
       await fetchKeys()
     } catch (e: any) {
       alert(e.message)
@@ -138,10 +137,6 @@ export default function KeysPanel() {
               <Label>{t("allowed_models")}</Label>
               <Input placeholder={t("allowed_models_hint")} value={form.allowedModels} onChange={(e) => setForm({ ...form, allowedModels: e.target.value })} />
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>{t("provider_api_keys")} (JSON)</Label>
-              <Input placeholder='{"openai":"sk-xxx","deepseek":"sk-xxx"}' value={form.providerKeys} onChange={(e) => setForm({ ...form, providerKeys: e.target.value })} />
-            </div>
           </div>
           <div className="mt-4">
             <Button onClick={handleCreate}>{t("create_key_btn")}</Button>
@@ -188,11 +183,6 @@ export default function KeysPanel() {
                     <div>RPM: {k.rpmLimit} · TPM: {k.tpmLimit}</div>
                     {k.allowedProviders?.length > 0 && <div>Providers: {k.allowedProviders.join(", ")}</div>}
                     {k.allowedModels?.length > 0 && <div>Models: {k.allowedModels.join(", ")}</div>}
-                    {Object.keys(k.providerKeys || {}).length > 0 ? (
-                      <div>{t("provider_keys")}: {Object.keys(k.providerKeys).join(", ")}</div>
-                    ) : (
-                      <div className="italic">{t("no_provider_keys")}</div>
-                    )}
                   </div>
                 </div>
               ))}

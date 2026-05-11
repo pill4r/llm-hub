@@ -9,10 +9,10 @@
 import { Hono } from "hono";
 import { stream } from "hono/streaming";
 import { authMiddleware } from "./middleware/auth";
+import type { KeyRecord, ProviderKeyRecord } from "./middleware/auth";
 import { rateLimitMiddleware } from "./middleware/rate-limiter";
 import { billingMiddleware } from "./middleware/billing";
 import { forwardToProvider, resolveTarget, streamEventsFromProvider } from "./core/gateway";
-import type { KeyRecord, ProviderKeyRecord } from "./middleware/auth";
 import { consumerRegistry } from "./consumers";
 import { detectClient } from "./lib/client-detector";
 import { resolveProviderById, getProviderApiKey, listProviderFormats } from "./lib/provider-resolver";
@@ -364,11 +364,6 @@ app.get("/admin/usage", authMiddleware(), async (c) => {
   }
 
   return c.json({ data: results });
-});
-
-app.get("/admin/keys", authMiddleware(), async (c) => {
-  const keyRecord = c.get("keyRecord") as KeyRecord;
-  return c.json({ key: keyRecord });
 });
 
 // ========================================================================
