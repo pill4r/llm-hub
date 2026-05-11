@@ -28,16 +28,16 @@ export const openaiTransform: TransformConfig = {
                   $if: {
                     cond: {
                       $exists: {
-                        $path: "m.content",
+                        $content_text: { path: "m.content" },
                       },
                     },
                     then: {
-                      $path: "m.content",
+                      $content_text: { path: "m.content" },
                     },
                     else: { $literal: null },
                   },
                 },
-                else: { $path: "m.content" },
+                else: { $content_text: { path: "m.content" } },
               },
             },
           },
@@ -131,7 +131,7 @@ export const openaiTransform: TransformConfig = {
             cond: { $exists: { $path: "systemInstruction" } },
             then: {
               role: { $literal: "system" },
-              content: { $path: "systemInstruction" },
+              content: { $content_text: { path: "systemInstruction" } },
             },
           },
         },
@@ -164,6 +164,11 @@ export const openaiTransform: TransformConfig = {
 
   stream: {
     routeBy: "type",
+    default: {
+      type: { $literal: "text_delta" },
+      index: { $path: "choices[0].index" },
+      delta: { $path: "choices[0].delta.content" },
+    },
     events: {
       text_delta: {
         type: { $literal: "text_delta" },
@@ -213,13 +218,20 @@ export const anthropicTransform: TransformConfig = {
           else: { $literal: 4096 },
         },
       },
+      system: { $content_text: { path: "systemInstruction" } },
       messages: {
         $map: {
           path: "messages",
           item: "m",
           produce: {
-            role: { $path: "m.role" },
-            content: { $path: "m.content" },
+            $if: {
+              cond: { $eq: [{ $path: "m.role" }, { $literal: "system" }] },
+              then: { $literal: null },
+              else: {
+                role: { $path: "m.role" },
+                content: { $content_text: { path: "m.content" } },
+              },
+            },
           },
         },
       },
@@ -264,21 +276,8 @@ export const anthropicTransform: TransformConfig = {
         },
       },
     },
-    prepend: [
-      {
-        target: "messages",
-        value: {
-          $if: {
-            cond: { $exists: { $path: "systemInstruction" } },
-            then: {
-              role: { $literal: "system" },
-              content: { $path: "systemInstruction" },
-            },
-          },
-        },
-      },
-    ],
-    remove: ["messages[0]"], // Remove system message from messages array (Anthropic handles it top-level)
+    prepend: [],
+    remove: [],
   },
 
   response: {

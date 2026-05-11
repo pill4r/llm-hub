@@ -363,7 +363,7 @@ describe("OpenAI Template — Request", () => {
 
     expect(result.model).toBe("gpt-4o-mini");
     expect(result.messages).toEqual([
-      { role: "user", content: [{ type: "text", text: "Hello" }] },
+      { role: "user", content: "Hello" },
     ]);
     expect(result.max_tokens).toBe(100);
     expect(result.temperature).toBe(0.7);
@@ -492,7 +492,7 @@ describe("Anthropic Template — Request", () => {
 
     expect(result.model).toBe("gpt-4o-mini");
     expect(result.messages).toEqual([
-      { role: "user", content: [{ type: "text", text: "Hello" }] },
+      { role: "user", content: "Hello" },
     ]);
     expect(result.max_tokens).toBe(100);
     expect(result.temperature).toBe(0.7);
@@ -504,30 +504,32 @@ describe("Anthropic Template — Request", () => {
     expect(result.max_tokens).toBe(4096);
   });
 
-  it("prepends system instruction", () => {
+  it("uses top-level system parameter for system instruction", () => {
     const ir = createIRRequest({ systemInstruction: "Be helpful" });
     const result = buildProviderRequest(ir, anthropicTransform.request);
 
-    expect(result.messages).toHaveLength(2);
+    // Anthropic API uses top-level "system" parameter, not messages array
+    expect(result.system).toBe("Be helpful");
+    expect(result.messages).toHaveLength(1);
     expect((result.messages as any[])[0]).toEqual({
-      role: "system",
-      content: "Be helpful",
+      role: "user",
+      content: "Hello",
     });
   });
 
-  it("removes system message from messages array", () => {
-    const ir = createIRRequest({ systemInstruction: "Be helpful" });
+  it("filters out system messages from messages array", () => {
+    const ir = createIRRequest({
+      messages: [
+        { role: "system" as const, content: [{ type: "text" as const, text: "Be helpful" }] },
+        { role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] },
+      ],
+    });
     const result = buildProviderRequest(ir, anthropicTransform.request);
 
-    // After prepend + remove, system message should be gone
-    // Actually the remove targets messages[0] which is the prepended system message
+    // System messages in the messages array are filtered out
     const messages = result.messages as any[];
-    expect(messages[0].role).toBe("system");
-    // The remove happens after prepend, so messages[0] (system) gets removed
-    // Wait — let me re-check the engine logic...
-    // prepend adds to front, then remove deletes messages[0]
-    // So the system message gets removed, leaving only user message
-    // This matches Anthropic's top-level "system" parameter behavior
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("user");
   });
 
   it("transforms tools to Anthropic format", () => {

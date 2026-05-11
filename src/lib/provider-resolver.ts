@@ -162,6 +162,6 @@ export function listProviderFormats(): { id: string; name: string; capabilities:
   return listBuiltinFormats().map((fmt) => ({
     id: fmt.id,
     name: fmt.name,
-    capabilities: fmt.capabilities as Record<string, boolean>,
+    capabilities: fmt.capabilities as unknown as Record<string, boolean>,
   }));
 }

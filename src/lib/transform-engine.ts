@@ -21,6 +21,7 @@ export interface ValueFilter { $filter: { path: string; where: { path: string; e
 export interface ValueMap { $map: { path: string; item: string; produce: Record<string, unknown> } }
 export interface ValueIf { $if: { cond: Condition; then: unknown; else?: unknown } }
 export interface ValueSwitch { $switch: { path: string; cases: Record<string, unknown>; default?: unknown } }
+export interface ValueContentText { $content_text: { path: string } }
 
 export type ValueExpr =
   | ValuePath
@@ -30,6 +31,7 @@ export type ValueExpr =
   | ValueMap
   | ValueIf
   | ValueSwitch
+  | ValueContentText
   | string | number | boolean | null
   | ValueExpr[]
   | { [key: string]: ValueExpr };
@@ -185,7 +187,7 @@ function evalValue(expr: unknown, ctx: Record<string, unknown>): unknown {
     return arr.map((item, idx) => {
       const itemCtx = { ...ctx, [cfg.item]: item, [`${cfg.item}_index`]: idx };
       return evalObject(cfg.produce, itemCtx);
-    });
+    }).filter((val) => val !== undefined && val !== null);
   }
 
   // Condition
@@ -203,6 +205,21 @@ function evalValue(expr: unknown, ctx: Record<string, unknown>): unknown {
     return null;
   }
 
+  // Extract text from ContentPart[]
+  if ("$content_text" in expr) {
+    const cfg = expr.$content_text as { path: string };
+    const val = getPath(ctx, cfg.path);
+    if (typeof val === "string") return val;
+    if (Array.isArray(val)) {
+      // ContentPart[] → concatenate text parts
+      return val
+        .filter((part: unknown) => part && typeof part === "object" && (part as Record<string, unknown>).type === "text")
+        .map((part: unknown) => String((part as Record<string, unknown>).text || ""))
+        .join("");
+    }
+    return String(val || "");
+  }
+
   // Plain object — recursively evaluate
   return evalObject(expr as Record<string, ValueExpr>, ctx);
 }
@@ -211,6 +228,14 @@ function evalObject(
   template: Record<string, unknown> | unknown[],
   ctx: Record<string, unknown>
 ): Record<string, unknown> | unknown[] {
+  // If it's an expression object, evaluate it directly
+  if (!Array.isArray(template) && template !== null && typeof template === "object") {
+    const keys = Object.keys(template);
+    if (keys.length === 1 && keys[0].charAt(0) === "$") {
+      return evalValue(template, ctx) as Record<string, unknown> | unknown[];
+    }
+  }
+
   if (Array.isArray(template)) {
     const result: unknown[] = [];
     for (const item of template) {
@@ -265,6 +290,43 @@ export function buildProviderRequest(
   // Build body from template
   let body = evalObject(transform.body, ir) as Record<string, unknown>;
 
+  // Remove fields first (before prepend, so we can remove original system messages)
+  if (transform.remove) {
+    for (const path of transform.remove) {
+      const parts = path.split(".");
+      let current: any = body;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        // Handle array index notation: messages[0]
+        const match = part.match(/^(.+)\[(\d+)\]$/);
+        if (match) {
+          const arr = current?.[match[1]];
+          if (Array.isArray(arr)) {
+            current = arr[parseInt(match[2], 10)];
+          } else {
+            current = undefined;
+            break;
+          }
+        } else {
+          current = current?.[part];
+        }
+      }
+      if (current && typeof current === "object") {
+        const lastPart = parts[parts.length - 1];
+        // Handle array index removal
+        const match = lastPart.match(/^(.+)\[(\d+)\]$/);
+        if (match) {
+          const arr = current[match[1]];
+          if (Array.isArray(arr)) {
+            arr.splice(parseInt(match[2], 10), 1);
+          }
+        } else {
+          delete current[lastPart];
+        }
+      }
+    }
+  }
+
   // Prepend items (e.g., system message)
   if (transform.prepend) {
     for (const { target, value } of transform.prepend) {
@@ -272,20 +334,6 @@ export function buildProviderRequest(
       const val = evalValue(value, ir);
       if (arr && Array.isArray(arr) && val != null) {
         setPath(body, target, [val, ...arr]);
-      }
-    }
-  }
-
-  // Remove fields
-  if (transform.remove) {
-    for (const path of transform.remove) {
-      const parts = path.split(".");
-      let current: any = body;
-      for (let i = 0; i < parts.length - 1; i++) {
-        current = current?.[parts[i]];
-      }
-      if (current && typeof current === "object") {
-        delete current[parts[parts.length - 1]];
       }
     }
   }
@@ -350,6 +398,10 @@ export function parseStreamChunk(
     const eventTemplate = transform.events?.[eventType] ?? transform.default;
     if (eventTemplate) {
       return evalObject(eventTemplate, data) as Record<string, unknown>;
+    }
+    // If routeBy field is missing but we have a default, use it
+    if (!eventType && transform.default) {
+      return evalObject(transform.default, data) as Record<string, unknown>;
     }
     return null;
   }

@@ -79,6 +79,7 @@ export function getDefaultCapabilities(protocol: ProviderProtocol): ConverterCap
         systemMessages: true,
         reasoning: false,
         jsonMode: false,
+        maxContextLength: 4096,
       };
   }
 }
@@ -116,7 +117,10 @@ export function buildAuthHeaders(config: ProviderConfig, apiKey: string): Record
   }
 
   if (config.extraHeaders) {
-    Object.assign(headers, config.extraHeaders);
+    const keys = Object.keys(config.extraHeaders);
+    for (const key of keys) {
+      headers[key] = config.extraHeaders[key];
+    }
   }
 
   return headers;
@@ -130,7 +134,8 @@ export function parseProviderConfig(raw: unknown): ProviderConfig | null {
   const r = raw as Record<string, unknown>;
 
   const protocol = r.protocol as ProviderProtocol;
-  if (!["openai-compatible", "anthropic-compatible", "custom"].includes(protocol)) {
+  const validProtocols = ["openai-compatible", "anthropic-compatible", "custom"];
+  if (validProtocols.indexOf(protocol) === -1) {
     return null;
   }
 

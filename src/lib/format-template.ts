@@ -8,7 +8,7 @@
  * The hub stores these in KV and dynamically creates converters at runtime.
  */
 
-import type { ConverterCapabilities, ConverterOptions } from "../core/converter";
+import type { ConverterCapabilities } from "./provider-engine";
 
 /** User-uploaded format template */
 export interface FormatTemplate {
