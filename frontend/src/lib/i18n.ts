@@ -80,6 +80,8 @@ const dict: Record<Lang, Record<string, string>> = {
     edit_provider_title: "Edit Provider",
     models_list: "Models",
     no_models: "No models configured. Click Fetch Models to auto-discover or add manually.",
+    custom_transforms: "Custom Protocol Transforms",
+    transforms_hint: "Declare how this provider deviates from the base protocol. Applied at runtime without code changes.",
   },
   zh: {
     login_title: "🔐 LLM-Hub 管理后台",
@@ -158,6 +160,8 @@ const dict: Record<Lang, Record<string, string>> = {
     edit_provider_title: "编辑提供商",
     models_list: "模型列表",
     no_models: "未配置模型。点击获取模型自动发现，或手动添加。",
+    custom_transforms: "自定义协议转换规则",
+    transforms_hint: "声明该提供商与基础协议的差异。运行时自动应用，无需修改代码。",
   },
 };
 

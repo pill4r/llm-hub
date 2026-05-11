@@ -116,6 +116,13 @@ export class OpenAIConverter extends BaseConverter {
       }
     }
 
+    // Apply custom transforms if configured
+    const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
+    if (transforms?.request) {
+      const { applyRequestTransform } = await import("../../lib/transform-engine");
+      return applyRequestTransform(body, transforms.request);
+    }
+
     return body;
   }
 
@@ -197,6 +204,13 @@ export class OpenAIConverter extends BaseConverter {
   // ========================================================================
 
   responseFromProvider(raw: unknown): IRResponse {
+    // Apply custom response transforms if configured
+    const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
+    if (transforms?.response) {
+      const { applyResponseTransform } = require("../../lib/transform-engine");
+      raw = applyResponseTransform(raw, transforms.response);
+    }
+
     const res = raw as Record<string, unknown>;
     const choice = (res.choices as Record<string, unknown>[])[0];
     const msg = choice.message as Record<string, unknown>;
@@ -267,9 +281,16 @@ export class OpenAIConverter extends BaseConverter {
   // ========================================================================
 
   streamEventFromProvider(raw: unknown): StreamEvent | null {
+    // Apply custom stream transforms if configured
+    const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
+    if (transforms?.stream) {
+      const { applyStreamTransform } = require("../../lib/transform-engine");
+      raw = applyStreamTransform(raw, transforms.stream);
+    }
+
     const chunk = raw as Record<string, unknown>;
 
-    // Skip [DONE] sentinel
+    // Skip [DONE] sentinel (empty chunk signals end after transform)
     if (Object.keys(chunk).length === 0) return null;
 
     const delta = chunk.choices?.[0]?.delta as Record<string, unknown> | undefined;

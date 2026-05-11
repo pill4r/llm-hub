@@ -57,6 +57,7 @@ interface ProviderFormState {
   authType: string
   testApiKey: string
   chatEndpoint: string
+  transformsJson: string
 }
 
 export default function ProvidersPanel() {
@@ -65,7 +66,7 @@ export default function ProvidersPanel() {
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<ProviderFormState>({
     id: "", protocol: "openai-compatible", baseUrl: "", authType: "bearer",
-    testApiKey: "", chatEndpoint: "",
+    testApiKey: "", chatEndpoint: "", transformsJson: "",
   })
   const [models, setModels] = useState<string[]>([])
   const [newModelInput, setNewModelInput] = useState("")
@@ -105,6 +106,14 @@ export default function ProvidersPanel() {
       autoFetchModels: false,
       models,
     }
+    if (form.transformsJson.trim()) {
+      try {
+        body.transforms = JSON.parse(form.transformsJson.trim())
+      } catch (e) {
+        setTestResult(t("test_failed", { error: "Invalid transforms JSON: " + (e as Error).message }))
+        return
+      }
+    }
     try {
       const resp = await apiFetch("/admin/providers", {
         method: "POST",
@@ -122,7 +131,7 @@ export default function ProvidersPanel() {
   }
 
   function resetForm() {
-    setForm({ id: "", protocol: "openai-compatible", baseUrl: "", authType: "bearer", testApiKey: "", chatEndpoint: "" })
+    setForm({ id: "", protocol: "openai-compatible", baseUrl: "", authType: "bearer", testApiKey: "", chatEndpoint: "", transformsJson: "" })
     setModels([])
     setNewModelInput("")
     setEditing(false)
@@ -163,18 +172,19 @@ export default function ProvidersPanel() {
   async function testModel(modelId: string) {
     setModelTestStatus((prev) => ({ ...prev, [modelId]: "pending" }))
     try {
-      const body: any = {
-        apiKey: form.testApiKey,
-        config: {
-          providerId: form.id || "test",
-          protocol: form.protocol,
-          baseUrl: form.baseUrl,
-          authType: form.authType,
-          chatEndpoint: form.chatEndpoint || undefined,
-          models: [modelId],
-          autoFetchModels: false,
-        }
+      const config: any = {
+        providerId: form.id || "test",
+        protocol: form.protocol,
+        baseUrl: form.baseUrl,
+        authType: form.authType,
+        chatEndpoint: form.chatEndpoint || undefined,
+        models: [modelId],
+        autoFetchModels: false,
       }
+      if (form.transformsJson.trim()) {
+        try { config.transforms = JSON.parse(form.transformsJson.trim()) } catch {}
+      }
+      const body: any = { apiKey: form.testApiKey, config }
       const resp = await apiFetch("/admin/providers/test", {
         method: "POST",
         body: JSON.stringify(body),
@@ -232,6 +242,7 @@ export default function ProvidersPanel() {
       authType: "bearer",
       testApiKey: "",
       chatEndpoint: "",
+      transformsJson: "",
     })
     setModels([])
     setNewModelInput("")
@@ -294,6 +305,44 @@ export default function ProvidersPanel() {
               <Label>{t("test_api_key")}</Label>
               <Input type="password" placeholder="sk-..." value={form.testApiKey} onChange={(e) => setForm({ ...form, testApiKey: e.target.value })} />
             </div>
+          </div>
+
+          {/* Custom Transforms */}
+          <div className="mt-6 rounded-lg border border-border bg-card/50 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <Label className="text-base font-semibold">🛠️ {t("custom_transforms") || "Custom Protocol Transforms"}</Label>
+              <span className="text-xs text-muted-foreground">JSON · Optional</span>
+            </div>
+            <p className="mb-2 text-xs text-muted-foreground">
+              {t("transforms_hint") || "Declare how this provider deviates from the base protocol. Applied at runtime without code changes."}
+            </p>
+            <textarea
+              className="min-h-[120px] w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
+              placeholder={JSON.stringify({
+                request: { wrap: "input", set: { temperature: 0.7 }, rename: { max_tokens: "maxTokens" } },
+                response: { unwrap: "output", construct: { content: "text", model: "model_id" } },
+                stream: { contentPath: "delta.text", doneMarker: "[DONE]" }
+              }, null, 2)}
+              value={form.transformsJson}
+              onChange={(e) => setForm({ ...form, transformsJson: e.target.value })}
+            />
+            {form.transformsJson.trim() && (
+              <div className="mt-2 flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => {
+                  try {
+                    JSON.parse(form.transformsJson.trim())
+                    setTestResult("✅ Transforms JSON is valid")
+                  } catch (e: any) {
+                    setTestResult(t("test_failed", { error: "Transforms JSON: " + e.message }))
+                  }
+                }}>
+                  Validate JSON
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, transformsJson: "" })}>
+                  Clear
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Models Section */}

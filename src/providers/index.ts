@@ -4,10 +4,12 @@
  * Auto-imports all converters so they self-register.
  */
 
-// Import converters to trigger registration
+// Core protocol formats (wire protocols)
 import "./openai/converter";
-import "./deepseek/converter";
 import "./anthropic/converter";
+
+// Provider-specific converters that extend core protocols
+import "./deepseek/converter";
 import "./opencodego/converter";
 
 // Export the registry for use elsewhere

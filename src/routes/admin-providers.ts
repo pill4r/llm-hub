@@ -15,6 +15,12 @@ import {
   getAllProviderConfigs,
   saveProviderConfigs,
 } from "../lib/provider-config";
+import {
+  validateFormatTemplate,
+  getAllFormatTemplates,
+  saveFormatTemplates,
+  deleteFormatTemplate,
+} from "../lib/format-template";
 import { registry } from "../core/converter";
 import { adminAuthMiddleware } from "../middleware/admin-auth";
 
@@ -97,15 +103,20 @@ admin.get("/", async (c) => {
   const kv = c.env.KV;
   const configs = await getAllProviderConfigs(kv);
 
-  // Supported protocol formats (converters) — these are wire-protocol implementations,
-  // NOT "built-in providers". They define how we speak to different LLM APIs.
-  const supportedFormats = registry.list().map((r) => ({
-    providerId: r.id,
-    providerName: r.name,
-    protocol: r.id === "anthropic" ? "anthropic-compatible" : "openai-compatible",
-    source: "format",
-    capabilities: r.capabilities,
-  }));
+  // Core protocol formats — these are the actual wire-protocol implementations.
+  // Provider-specific converters (deepseek, opencodego) extend these, they are NOT
+  // separate formats. Users configure a provider by picking one of these formats
+  // and providing their own baseUrl + apiKey.
+  const CORE_FORMATS = ["openai", "anthropic"];
+  const supportedFormats = registry.list()
+    .filter((r) => CORE_FORMATS.includes(r.id))
+    .map((r) => ({
+      providerId: r.id,
+      providerName: r.name,
+      protocol: r.id === "anthropic" ? "anthropic-compatible" : "openai-compatible",
+      source: "format",
+      capabilities: r.capabilities,
+    }));
 
   // User-configured providers (from KV)
   const configuredProviders = configs.map((cfg) => ({
@@ -183,11 +194,11 @@ admin.post("/", async (c) => {
 // ========================================================================
 
 admin.post("/discover", async (c) => {
-  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
-  const baseUrl = String(body.baseUrl || "");
-  const protocol = String(body.protocol || "openai-compatible");
-  const authType = String(body.authType || "bearer");
-  const apiKey = String(body.apiKey || "");
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+  const baseUrl = String((body as Record<string, unknown>).baseUrl || "");
+  const protocol = String((body as Record<string, unknown>).protocol || "openai-compatible");
+  const authType = String((body as Record<string, unknown>).authType || "bearer");
+  const apiKey = String((body as Record<string, unknown>).apiKey || "");
 
   if (!baseUrl) {
     return c.json({ error: { message: "baseUrl is required", type: "invalid_request" } }, 400);
@@ -211,7 +222,7 @@ admin.post("/discover", async (c) => {
 admin.post("/:providerId/test", async (c) => {
   const kv = c.env.KV;
   const providerId = c.req.param("providerId");
-  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
   const apiKey = String(body.apiKey || "");
 
   const configs = await getAllProviderConfigs(kv);
@@ -233,7 +244,7 @@ admin.post("/:providerId/test", async (c) => {
     const headers = buildAuthHeaders(cfg, apiKey);
 
     const testBody: Record<string, unknown> = {
-      model: cfg.models[0]?.id || "default",
+      model: cfg.models[0] || "default",
       max_tokens: 50,
     };
 
@@ -272,9 +283,9 @@ admin.post("/:providerId/test", async (c) => {
 // ========================================================================
 
 admin.post("/test", async (c) => {
-  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
   const apiKey = String(body.apiKey || "");
-  const config = parseProviderConfig(body.config || body);
+  const config = parseProviderConfig((body as Record<string, unknown>).config || body);
 
   if (!config) {
     return c.json({ error: { message: "Invalid provider config", type: "invalid_request" } }, 400);
@@ -291,7 +302,7 @@ admin.post("/test", async (c) => {
     const headers = buildAuthHeaders(config, apiKey);
 
     const testBody: Record<string, unknown> = {
-      model: config.models[0]?.id || "default",
+      model: config.models[0] || "default",
       max_tokens: 50,
     };
 
@@ -375,7 +386,7 @@ admin.delete("/:providerId", async (c) => {
 admin.post("/:providerId/fetch-models", async (c) => {
   const kv = c.env.KV;
   const providerId = c.req.param("providerId");
-  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
   const apiKey = String(body.apiKey || "");
 
   const configs = await getAllProviderConfigs(kv);
@@ -402,6 +413,58 @@ admin.post("/:providerId/fetch-models", async (c) => {
   } catch (err) {
     return c.json({ error: { message: String(err), type: "network_error" } }, 502);
   }
+});
+
+// ========================================================================
+// Format Template Management
+// ========================================================================
+
+/** List all uploaded format templates */
+admin.get("/formats", async (c) => {
+  const kv = c.env.KV;
+  const formats = await getAllFormatTemplates(kv);
+  return c.json({ formats });
+});
+
+/** Upload / update a format template */
+admin.post("/formats", async (c) => {
+  const kv = c.env.KV;
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
+
+  const format = validateFormatTemplate(body);
+  if (!format) {
+    return c.json({ error: { message: "Invalid format template", type: "invalid_request" } }, 400);
+  }
+
+  const formats = await getAllFormatTemplates(kv);
+  const existingIndex = formats.findIndex((f) => f.formatId === format.formatId);
+
+  if (existingIndex >= 0) {
+    formats[existingIndex] = format;
+  } else {
+    formats.push(format);
+  }
+
+  await saveFormatTemplates(kv, formats);
+
+  return c.json({
+    success: true,
+    formatId: format.formatId,
+    action: existingIndex >= 0 ? "updated" : "created",
+  });
+});
+
+/** Delete a format template */
+admin.delete("/formats/:formatId", async (c) => {
+  const kv = c.env.KV;
+  const formatId = c.req.param("formatId");
+
+  const deleted = await deleteFormatTemplate(kv, formatId);
+  if (!deleted) {
+    return c.json({ error: { message: `Format "${formatId}" not found`, type: "not_found" } }, 404);
+  }
+
+  return c.json({ success: true, deleted: formatId });
 });
 
 export default admin;

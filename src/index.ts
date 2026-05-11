@@ -312,6 +312,9 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
     if (resolved.config.extraHeaders) {
       converter.options.extraHeaders = resolved.config.extraHeaders;
     }
+    if (resolved.config.transforms) {
+      converter.options.transforms = resolved.config.transforms;
+    }
   }
 
   // Override with user's configured baseUrl if set
