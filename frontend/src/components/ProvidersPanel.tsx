@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select } from "@/components/ui/select"
 import { t } from "@/lib/i18n"
 import { apiFetch } from "@/lib/api"
-import { Plus, X, RefreshCw, TestTube, Trash2 } from "lucide-react"
+import { Plus, RefreshCw, TestTube, Trash2 } from "lucide-react"
 
 interface Provider {
   id: string
@@ -20,15 +20,33 @@ interface Provider {
   capabilities?: string[]
 }
 
+interface SupportedFormat {
+  providerId: string
+  providerName: string
+  protocol: string
+  source: string
+  capabilities?: Record<string, boolean>
+}
+
 function mapProvider(p: any): Provider {
   return {
     id: p.providerId || p.id,
-    source: p.source || "builtin",
+    source: p.source || "configured",
     status: "active",
     protocol: p.protocol || "openai-compatible",
     baseUrl: p.baseUrl,
     models: typeof p.models === "number" ? p.models : (Array.isArray(p.models) ? p.models.length : 0),
     capabilities: p.capabilities,
+  }
+}
+
+function mapSupportedFormat(r: any): SupportedFormat {
+  return {
+    providerId: r.providerId || r.id,
+    providerName: r.providerName || r.name || r.providerId || r.id,
+    protocol: r.protocol || "openai-compatible",
+    source: "format",
+    capabilities: r.capabilities,
   }
 }
 
@@ -43,6 +61,7 @@ interface ProviderFormState {
 
 export default function ProvidersPanel() {
   const [providers, setProviders] = useState<Provider[]>([])
+  const [supportedFormats, setSupportedFormats] = useState<SupportedFormat[]>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState<ProviderFormState>({
     id: "", protocol: "openai-compatible", baseUrl: "", authType: "bearer",
@@ -64,8 +83,10 @@ export default function ProvidersPanel() {
       if (!resp.ok) throw new Error("failed")
       const data = await resp.json()
       setProviders((data.providers || []).map(mapProvider))
+      setSupportedFormats((data.supportedFormats || []).map(mapSupportedFormat))
     } catch {
       setProviders([])
+      setSupportedFormats([])
     } finally {
       setLoading(false)
     }
@@ -230,19 +251,8 @@ export default function ProvidersPanel() {
     setModels(models.filter((_, i) => i !== idx))
   }
 
-  async function loadProviderDetail(p: Provider) {
-    if (p.source === "builtin") {
-      setDetailProvider(p)
-      return
-    }
-    try {
-      const resp = await apiFetch(`/admin/providers/${p.id}`)
-      if (!resp.ok) throw new Error("failed")
-      const data = await resp.json()
-      setDetailProvider({ ...p, ...mapProvider(data.config || data) })
-    } catch {
-      setDetailProvider(p)
-    }
+  function loadProviderDetail(p: Provider) {
+    setDetailProvider(p)
   }
 
   return (
@@ -406,7 +416,7 @@ export default function ProvidersPanel() {
                   <div className="space-y-1 cursor-pointer" onClick={() => loadProviderDetail(p)}>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{p.id}</span>
-                      <Badge variant={p.source === "builtin" ? "default" : "secondary"}>{t(p.source)}</Badge>
+                      <Badge variant={p.source === "configured" ? "secondary" : "default"}>{t(p.source)}</Badge>
                       <Badge variant={p.status === "active" ? "outline" : "destructive"}>{t(p.status)}</Badge>
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -417,17 +427,53 @@ export default function ProvidersPanel() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {p.source === "dynamic" && (
+                    {p.source === "configured" && (
                       <Button variant="outline" size="sm" onClick={() => handleFetchModelsForSaved(p)}>
                         <RefreshCw className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => startEdit(p)} disabled={p.source === "builtin"}>
+                    <Button variant="ghost" size="sm" onClick={() => startEdit(p)} disabled={p.source !== "configured"}>
                       Edit
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(p)} disabled={p.source === "builtin"}>
+                    <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(p)} disabled={p.source !== "configured"}>
                       Delete
                     </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Supported Formats Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>🔌 {t("supported_formats_title") || "Supported Protocol Formats"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {supportedFormats.length === 0 ? (
+            <p className="text-muted-foreground">No protocol formats available</p>
+          ) : (
+            <div className="space-y-2">
+              {supportedFormats.map((f) => (
+                <div key={f.providerId} className="flex items-center justify-between rounded-lg border border-border p-3 hover:bg-accent/30 transition-colors">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">{f.providerName}</span>
+                      <Badge variant="outline">{t("format")}</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Protocol: {f.protocol} · ID: {f.providerId}
+                    </div>
+                    {f.capabilities && (
+                      <div className="text-xs text-muted-foreground">
+                        Capabilities: {Object.entries(f.capabilities)
+                          .filter(([_, v]) => v === true)
+                          .map(([k]) => k)
+                          .join(", ")}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

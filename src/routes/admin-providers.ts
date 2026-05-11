@@ -97,18 +97,22 @@ admin.get("/", async (c) => {
   const kv = c.env.KV;
   const configs = await getAllProviderConfigs(kv);
 
-  // Also include hardcoded providers
-  const hardcoded = registry.list().map((r) => ({
+  // Supported protocol formats (converters) — these are wire-protocol implementations,
+  // NOT "built-in providers". They define how we speak to different LLM APIs.
+  const supportedFormats = registry.list().map((r) => ({
     providerId: r.id,
-    protocol: r.id === "anthropic" ? "anthropic-compatible" : "custom",
-    source: "builtin",
+    providerName: r.name,
+    protocol: r.id === "anthropic" ? "anthropic-compatible" : "openai-compatible",
+    source: "format",
     capabilities: r.capabilities,
   }));
 
-  const dynamic = configs.map((cfg) => ({
+  // User-configured providers (from KV)
+  const configuredProviders = configs.map((cfg) => ({
     providerId: cfg.providerId,
+    providerName: cfg.providerId,
     protocol: cfg.protocol,
-    source: "dynamic",
+    source: "configured",
     baseUrl: cfg.baseUrl,
     authType: cfg.authType,
     models: cfg.models.length,
@@ -116,7 +120,10 @@ admin.get("/", async (c) => {
     createdAt: cfg.createdAt,
   }));
 
-  return c.json({ providers: [...hardcoded, ...dynamic] });
+  return c.json({
+    providers: configuredProviders,
+    supportedFormats,
+  });
 });
 
 // ========================================================================
