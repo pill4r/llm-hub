@@ -267,7 +267,7 @@ function parseStreamChunk(chunk: unknown): StreamEvent | null {
   }
 
   // Text delta
-  if (delta.content !== undefined && delta.content !== null) {
+  if (delta.content !== undefined && delta.content !== null && String(delta.content) !== "") {
     return {
       type: "text_delta",
       index: Number(choice.index || 0),
@@ -281,6 +281,15 @@ function parseStreamChunk(chunk: unknown): StreamEvent | null {
       type: "reasoning_delta",
       index: Number(choice.index || 0),
       delta: String(delta.reasoning_content),
+    };
+  }
+
+  // Reasoning content via reasoning field (OpenCode Go format)
+  if (delta.reasoning !== undefined && delta.reasoning !== null) {
+    return {
+      type: "reasoning_delta",
+      index: Number(choice.index || 0),
+      delta: String(delta.reasoning),
     };
   }
 
@@ -356,15 +365,19 @@ function buildHeaders(apiKey: string, extraHeaders?: Record<string, string>): Re
 }
 
 function buildEndpoint(baseUrl?: string, model?: string): string {
-  let url = ENDPOINT_TEMPLATE;
   if (baseUrl) {
-    const path = url.replace(/^https?:\/\/[^\/]+/, "");
-    url = `${baseUrl.replace(/\/$/, "")}${path}`;
+    // If baseUrl already contains /chat/completions, use it directly
+    if (baseUrl.indexOf("/chat/completions") >= 0) {
+      return baseUrl.replace(/\/$/, "");
+    }
+    // If baseUrl ends with /v1, append /chat/completions
+    if (baseUrl.indexOf("/v1") >= 0 && !baseUrl.match(/\/v1\/.*$/)) {
+      return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+    }
+    // Default: append /v1/chat/completions
+    return `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
   }
-  if (model) {
-    url = url.replace(/\{\{model\}\}/g, model);
-  }
-  return url;
+  return ENDPOINT_TEMPLATE;
 }
 
 // ============================================================================
