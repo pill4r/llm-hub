@@ -76,6 +76,7 @@ export default function ProvidersPanel() {
   const [detailProvider, setDetailProvider] = useState<Provider | null>(null)
   const [modelTestStatus, setModelTestStatus] = useState<Record<string, "pending" | "ok" | "error">>({})
   const [modelLatency, setModelLatency] = useState<Record<string, number>>({})
+  const [transformsOpen, setTransformsOpen] = useState(false)
 
   const fetchProviders = useCallback(async () => {
     setLoading(true)
@@ -307,44 +308,6 @@ export default function ProvidersPanel() {
             </div>
           </div>
 
-          {/* Custom Transforms */}
-          <div className="mt-6 rounded-lg border border-border bg-card/50 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <Label className="text-base font-semibold">🛠️ {t("custom_transforms") || "Custom Protocol Transforms"}</Label>
-              <span className="text-xs text-muted-foreground">JSON · Optional</span>
-            </div>
-            <p className="mb-2 text-xs text-muted-foreground">
-              {t("transforms_hint") || "Declare how this provider deviates from the base protocol. Applied at runtime without code changes."}
-            </p>
-            <textarea
-              className="min-h-[120px] w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
-              placeholder={JSON.stringify({
-                request: { wrap: "input", set: { temperature: 0.7 }, rename: { max_tokens: "maxTokens" } },
-                response: { unwrap: "output", construct: { content: "text", model: "model_id" } },
-                stream: { contentPath: "delta.text", doneMarker: "[DONE]" }
-              }, null, 2)}
-              value={form.transformsJson}
-              onChange={(e) => setForm({ ...form, transformsJson: e.target.value })}
-            />
-            {form.transformsJson.trim() && (
-              <div className="mt-2 flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => {
-                  try {
-                    JSON.parse(form.transformsJson.trim())
-                    setTestResult("✅ Transforms JSON is valid")
-                  } catch (e: any) {
-                    setTestResult(t("test_failed", { error: "Transforms JSON: " + e.message }))
-                  }
-                }}>
-                  Validate JSON
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, transformsJson: "" })}>
-                  Clear
-                </Button>
-              </div>
-            )}
-          </div>
-
           {/* Models Section */}
           <div className="mt-6 rounded-lg border border-border bg-card/50 p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -528,8 +491,65 @@ export default function ProvidersPanel() {
               ))}
             </div>
           )}
+
+          {/* Custom Transforms Trigger */}
+          <div className="mt-4 border-t border-border pt-4">
+            <Button variant="outline" size="sm" onClick={() => setTransformsOpen(true)}>
+              🛠️ {t("custom_transforms") || "Custom Protocol Transforms"}
+            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("transforms_hint") || "Declare how this provider deviates from the base protocol. Applied at runtime without code changes."}
+            </p>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Transforms Dialog */}
+      <Dialog open={transformsOpen} onOpenChange={(v) => !v && setTransformsOpen(false)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>🛠️ {t("custom_transforms") || "Custom Protocol Transforms"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {t("transforms_hint") || "Declare how this provider deviates from the base protocol. Applied at runtime without code changes."}
+            </p>
+            <textarea
+              className="min-h-[200px] w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
+              placeholder={JSON.stringify({
+                request: { wrap: "input", set: { temperature: 0.7 }, rename: { max_tokens: "maxTokens" } },
+                response: { unwrap: "output", construct: { content: "text", model: "model_id" } },
+                stream: { contentPath: "delta.text", doneMarker: "[DONE]" }
+              }, null, 2)}
+              value={form.transformsJson}
+              onChange={(e) => setForm({ ...form, transformsJson: e.target.value })}
+            />
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => {
+                try {
+                  JSON.parse(form.transformsJson.trim())
+                  setTestResult("✅ Transforms JSON is valid")
+                } catch (e: any) {
+                  setTestResult(t("test_failed", { error: "Transforms JSON: " + e.message }))
+                }
+              }}>
+                Validate JSON
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, transformsJson: "" })}>
+                Clear
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setTransformsOpen(false)}>
+                Done
+              </Button>
+            </div>
+            {form.transformsJson.trim() && (
+              <p className="text-xs text-muted-foreground">
+                Transforms will be applied to {form.id || "this provider"} when saved.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Detail Dialog */}
       <Dialog open={!!detailProvider} onOpenChange={(v) => !v && setDetailProvider(null)}>
