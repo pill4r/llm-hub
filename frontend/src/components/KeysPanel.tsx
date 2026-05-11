@@ -89,12 +89,22 @@ export default function KeysPanel() {
 
   async function handleDelete(id: string) {
     try {
-      const resp = await apiFetch(`/admin/keys/${id}`, { method: "DELETE" })
-      if (!resp.ok) throw new Error(await resp.text())
-      await fetchKeys()
+      const resp = await apiFetch(`/admin/keys/${encodeURIComponent(id)}`, { method: "DELETE" })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        throw new Error(data.error?.message || `HTTP ${resp.status}`)
+      }
+      // Optimistically remove from local state before refetch
+      setKeys(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      setDeleteTarget(null)
+      // Refetch in background
+      fetchKeys().catch(() => {})
     } catch (e: any) {
       alert(e.message)
-    } finally {
       setDeleteTarget(null)
     }
   }
