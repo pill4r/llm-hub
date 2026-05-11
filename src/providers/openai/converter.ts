@@ -18,6 +18,11 @@ import type {
   StreamEvent,
   Usage,
 } from "../../core/ir";
+import {
+  applyRequestTransform,
+  applyResponseTransform,
+  applyStreamTransform,
+} from "../../lib/transform-engine";
 
 export class OpenAIConverter extends BaseConverter {
   readonly providerId: string;
@@ -119,7 +124,6 @@ export class OpenAIConverter extends BaseConverter {
     // Apply custom transforms if configured
     const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
     if (transforms?.request) {
-      const { applyRequestTransform } = await import("../../lib/transform-engine");
       return applyRequestTransform(body, transforms.request);
     }
 
@@ -207,7 +211,6 @@ export class OpenAIConverter extends BaseConverter {
     // Apply custom response transforms if configured
     const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
     if (transforms?.response) {
-      const { applyResponseTransform } = require("../../lib/transform-engine");
       raw = applyResponseTransform(raw, transforms.response);
     }
 
@@ -284,7 +287,6 @@ export class OpenAIConverter extends BaseConverter {
     // Apply custom stream transforms if configured
     const transforms = this.options.transforms as import("../../lib/transform-engine").CustomTransforms | undefined;
     if (transforms?.stream) {
-      const { applyStreamTransform } = require("../../lib/transform-engine");
       raw = applyStreamTransform(raw, transforms.stream);
     }
 
@@ -293,7 +295,9 @@ export class OpenAIConverter extends BaseConverter {
     // Skip [DONE] sentinel (empty chunk signals end after transform)
     if (Object.keys(chunk).length === 0) return null;
 
-    const delta = chunk.choices?.[0]?.delta as Record<string, unknown> | undefined;
+    const choices = chunk.choices as Record<string, unknown>[] | undefined;
+    const firstChoice = choices?.[0] as Record<string, unknown> | undefined;
+    const delta = firstChoice?.delta as Record<string, unknown> | undefined;
     if (!delta) {
       // Usage-only chunk
       if (chunk.usage) {
@@ -309,37 +313,40 @@ export class OpenAIConverter extends BaseConverter {
     if (typeof delta.content === "string") {
       return {
         type: "text_delta",
-        index: chunk.choices[0].index || 0,
+        index: (firstChoice?.index as number) || 0,
         delta: delta.content,
       };
     }
 
     // Tool call delta
-    if (delta.tool_calls) {
-      const tc = delta.tool_calls[0] as Record<string, unknown>;
-      if (tc.function?.name) {
+    const toolCalls = delta.tool_calls as Record<string, unknown>[] | undefined;
+    if (toolCalls && toolCalls.length > 0) {
+      const tc = toolCalls[0];
+      const fn = tc.function as Record<string, unknown> | undefined;
+      if (fn?.name) {
         return {
           type: "tool_call_start",
           index: tc.index as number,
           toolCallId: String(tc.id),
-          toolName: String(tc.function.name),
+          toolName: String(fn.name),
         };
       }
-      if (tc.function?.arguments) {
+      if (fn?.arguments) {
         return {
           type: "tool_call_delta",
           index: tc.index as number,
           toolCallId: String(tc.id),
-          delta: String(tc.function.arguments),
+          delta: String(fn.arguments),
         };
       }
     }
 
     // Finish
-    if (chunk.choices?.[0]?.finish_reason) {
+    const finishReason = (firstChoice?.finish_reason || (choices?.[0] as Record<string, unknown>)?.finish_reason) as string | undefined;
+    if (finishReason) {
       return {
         type: "finish",
-        finishReason: chunk.choices[0].finish_reason as string,
+        finishReason,
       };
     }
 
