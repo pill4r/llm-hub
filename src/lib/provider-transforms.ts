@@ -143,8 +143,7 @@ export const openaiTransform: TransformConfig = {
     body: {
       id: { $path: "id" },
       model: { $path: "model" },
-      choices: {
-        $literal: [
+      choices: [
           {
             index: 0,
             message: {
@@ -155,14 +154,11 @@ export const openaiTransform: TransformConfig = {
             finishReason: { $path: "choices[0].finish_reason" },
           },
         ],
-      },
       usage: {
-        $literal: {
           promptTokens: { $path: "usage.prompt_tokens" },
           completionTokens: { $path: "usage.completion_tokens" },
           totalTokens: { $path: "usage.total_tokens" },
         },
-      },
     },
   },
 
@@ -188,13 +184,11 @@ export const openaiTransform: TransformConfig = {
       },
       usage: {
         type: { $literal: "usage" },
-      usage: {
-        $literal: {
+        usage: {
           promptTokens: { $path: "usage.prompt_tokens" },
           completionTokens: { $path: "usage.completion_tokens" },
           totalTokens: { $path: "usage.total_tokens" },
         },
-      },
       },
       finish: {
         type: { $literal: "finish" },
@@ -291,8 +285,7 @@ export const anthropicTransform: TransformConfig = {
     body: {
       id: { $path: "id" },
       model: { $path: "model" },
-      choices: {
-        $literal: [
+      choices: [
           {
             index: 0,
             message: {
@@ -302,9 +295,7 @@ export const anthropicTransform: TransformConfig = {
             finishReason: { $path: "stop_reason" },
           },
         ],
-      },
       usage: {
-        $literal: {
           promptTokens: { $path: "usage.input_tokens" },
           completionTokens: { $path: "usage.output_tokens" },
           totalTokens: {
@@ -315,15 +306,10 @@ export const anthropicTransform: TransformConfig = {
                   { $exists: { $path: "usage.output_tokens" } },
                 ],
               },
-              then: {
-                $literal: {
-                  $path: "usage.input_tokens",
-                },
-              },
+              then: { $path: "usage.input_tokens" },
             },
           },
         },
-      },
     },
   },
 

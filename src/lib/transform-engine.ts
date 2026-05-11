@@ -189,7 +189,7 @@ function evalValue(expr: unknown, ctx: Record<string, unknown>): unknown {
   // Condition
   if ("$if" in expr) {
     const cfg = expr.$if as { cond: Condition; then: ValueExpr; else?: ValueExpr };
-    return evalCondition(cfg.cond, ctx) ? evalValue(cfg.then, ctx) : evalValue(cfg.else ?? null, ctx);
+    return evalCondition(cfg.cond, ctx) ? evalValue(cfg.then, ctx) : (cfg.else !== undefined ? evalValue(cfg.else, ctx) : undefined);
   }
 
   // Switch by value
@@ -206,9 +206,20 @@ function evalValue(expr: unknown, ctx: Record<string, unknown>): unknown {
 }
 
 function evalObject(
-  template: Record<string, unknown>,
+  template: Record<string, unknown> | unknown[],
   ctx: Record<string, unknown>
-): Record<string, unknown> {
+): Record<string, unknown> | unknown[] {
+  if (Array.isArray(template)) {
+    const result: unknown[] = [];
+    for (const item of template) {
+      const val = evalValue(item, ctx);
+      if (val !== undefined) {
+        result.push(val);
+      }
+    }
+    return result;
+  }
+
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(template)) {
     const val = evalValue(template[key], ctx);
@@ -250,14 +261,14 @@ export function buildProviderRequest(
   if (!transform) return { ...ir };
 
   // Build body from template
-  let body = evalObject(transform.body, ir);
+  let body = evalObject(transform.body, ir) as Record<string, unknown>;
 
   // Prepend items (e.g., system message)
   if (transform.prepend) {
     for (const { target, value } of transform.prepend) {
       const arr = getPath(body, target) as unknown[] | undefined;
       const val = evalValue(value, ir);
-      if (arr && Array.isArray(arr) && val !== undefined) {
+      if (arr && Array.isArray(arr) && val != null) {
         setPath(body, target, [val, ...arr]);
       }
     }
@@ -308,7 +319,7 @@ export function parseProviderResponse(
   }
 
   // Build IR from template
-  return evalObject(transform.body, data);
+  return evalObject(transform.body, data) as Record<string, unknown>;
 }
 
 // ========================================================================
@@ -328,7 +339,7 @@ export function parseStreamChunk(
   // Done marker
   if (transform.doneMarker) {
     const raw = JSON.stringify(data);
-    if (raw.includes(transform.doneMarker)) return null;
+    if (raw.indexOf(transform.doneMarker) !== -1) return null;
   }
 
   // Route by event type
@@ -336,7 +347,7 @@ export function parseStreamChunk(
     const eventType = String(getPath(data, transform.routeBy) ?? "");
     const eventTemplate = transform.events?.[eventType] ?? transform.default;
     if (eventTemplate) {
-      return evalObject(eventTemplate, data);
+      return evalObject(eventTemplate, data) as Record<string, unknown>;
     }
     return null;
   }
