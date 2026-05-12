@@ -80,7 +80,7 @@ export default function KeysPanel() {
       })
       if (!resp.ok) throw new Error(await resp.text())
       const data = await resp.json()
-      setNewToken(data.token || "")
+      setNewToken(data.key?.token || data.token || "")
       setForm({ name: "", monthlyBudget: "0", rpm: "60", tpm: "100000", allowedProviders: "", allowedModels: "" })
       await fetchKeys()
     } catch (e: any) {
