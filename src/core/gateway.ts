@@ -32,11 +32,14 @@ const DEFAULT_CONFIG: GatewayConfig = {
  * Priority:
  *   1. x-hub-provider header
  *   2. model field ("provider:model" format)
- *   3. Default provider
+ *   3. Model-to-provider mapping (find provider that supports this model)
+ *   4. Default provider
  */
 export function resolveTarget(
   headers: Headers,
-  bodyModel: string
+  bodyModel: string,
+  providerConfigs?: { providerId: string; models: string[] }[],
+  allowedProviders?: string[]
 ): { providerId: string; model: string } {
   const providerHeader = headers.get("x-hub-provider");
   if (providerHeader) {
@@ -46,6 +49,22 @@ export function resolveTarget(
   if (bodyModel.includes(":")) {
     const [providerId, ...modelParts] = bodyModel.split(":");
     return { providerId, model: modelParts.join(":") };
+  }
+
+  // Try to find provider by model name
+  if (providerConfigs && providerConfigs.length > 0) {
+    for (const config of providerConfigs) {
+      // Check if provider is allowed
+      if (allowedProviders && allowedProviders.length > 0) {
+        if (!allowedProviders.includes(config.providerId)) {
+          continue;
+        }
+      }
+      // Check if provider supports this model
+      if (config.models.includes(bodyModel)) {
+        return { providerId: config.providerId, model: bodyModel };
+      }
+    }
   }
 
   return { providerId: "openai", model: bodyModel };

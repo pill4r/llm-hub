@@ -227,7 +227,19 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
   const providerKeys = c.get("providerKeys") as Record<string, ProviderKeyRecord>;
   const kv = c.env.KV as KVNamespace;
 
-  const { providerId, model: resolvedModel } = resolveTarget(c.req.raw.headers, model);
+  // Load provider configs for model resolution
+  const providerConfigs = await getAllProviderConfigs(kv);
+  const providerModelMap = providerConfigs.map(cfg => ({
+    providerId: cfg.providerId,
+    models: cfg.models,
+  }));
+
+  const { providerId, model: resolvedModel } = resolveTarget(
+    c.req.raw.headers,
+    model,
+    providerModelMap,
+    keyRecord.allowedProviders
+  );
 
   // Check provider permission
   if (keyRecord.allowedProviders.length > 0 && !keyRecord.allowedProviders.includes(providerId)) {
@@ -261,7 +273,17 @@ async function resolveProvider(c: any, model: string): Promise<ResolveResult> {
   let providerConfig = resolved.config;
 
   // Get provider API key (with load balancing)
-  const keyData = providerKeys[providerId];
+  // 1. Try per-key provider config
+  let keyData = providerKeys[providerId];
+  
+  // 2. Fallback to global provider keys
+  if (!keyData) {
+    const globalKeyJson = await kv.get(`global:provider:${providerId}`);
+    if (globalKeyJson) {
+      keyData = JSON.parse(globalKeyJson) as ProviderKeyRecord;
+    }
+  }
+  
   if (!keyData) {
     return {
       ok: false,

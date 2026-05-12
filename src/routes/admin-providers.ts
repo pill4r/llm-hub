@@ -90,6 +90,77 @@ async function discoverModels(
 }
 
 // ========================================================================
+// Global Provider Key Management
+// ========================================================================
+
+/** Get global provider key */
+admin.get("/:providerId/key", async (c) => {
+  const kv = c.env.KV;
+  const providerId = c.req.param("providerId");
+  
+  const keyJson = await kv.get(`global:provider:${providerId}`);
+  if (!keyJson) {
+    return c.json({ error: { message: `No global key found for provider "${providerId}"`, type: "not_found" } }, 404);
+  }
+  
+  const keyData = JSON.parse(keyJson) as ProviderKeyRecord;
+  // Mask the actual key for security
+  const maskedKey = keyData.apiKey ? `${keyData.apiKey.slice(0, 8)}...${keyData.apiKey.slice(-4)}` : "";
+  
+  return c.json({
+    providerId,
+    hasKey: !!keyData.apiKey,
+    apiKey: maskedKey,
+    baseUrl: keyData.baseUrl,
+    hasLoadBalancer: !!keyData.keys && keyData.keys.length > 0,
+  });
+});
+
+/** Set global provider key */
+admin.put("/:providerId/key", async (c) => {
+  const kv = c.env.KV;
+  const providerId = c.req.param("providerId");
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
+  
+  const apiKey = String(body.apiKey || "");
+  if (!apiKey) {
+    return c.json({ error: { message: "apiKey is required", type: "invalid_request" } }, 400);
+  }
+  
+  const keyData: ProviderKeyRecord = {
+    apiKey,
+    baseUrl: body.baseUrl ? String(body.baseUrl) : undefined,
+  };
+  
+  // Support load-balanced keys
+  if (body.keys && Array.isArray(body.keys)) {
+    keyData.keys = (body.keys as any[]).map((k: any) => ({
+      apiKey: String(k.apiKey || ""),
+      baseUrl: k.baseUrl ? String(k.baseUrl) : undefined,
+      weight: Number(k.weight || 1),
+    })).filter(k => k.apiKey);
+  }
+  
+  await kv.put(`global:provider:${providerId}`, JSON.stringify(keyData));
+  
+  return c.json({
+    success: true,
+    providerId,
+    hasLoadBalancer: !!keyData.keys && keyData.keys.length > 0,
+  });
+});
+
+/** Delete global provider key */
+admin.delete("/:providerId/key", async (c) => {
+  const kv = c.env.KV;
+  const providerId = c.req.param("providerId");
+  
+  await kv.delete(`global:provider:${providerId}`);
+  
+  return c.json({ success: true, deleted: providerId });
+});
+
+// ========================================================================
 // List all providers
 // ========================================================================
 
