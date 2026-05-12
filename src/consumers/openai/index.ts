@@ -128,7 +128,7 @@ function buildResponse(ir: IRResponse): Record<string, unknown> {
     }));
   }
 
-  return {
+  const response: Record<string, unknown> = {
     id: ir.id,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
@@ -138,8 +138,18 @@ function buildResponse(ir: IRResponse): Record<string, unknown> {
       message,
       finish_reason: choice.finishReason,
     }],
-    usage: ir.usage,
   };
+
+  // Convert IR usage format to OpenAI format
+  if (ir.usage) {
+    response.usage = {
+      prompt_tokens: ir.usage.promptTokens,
+      completion_tokens: ir.usage.completionTokens,
+      total_tokens: ir.usage.totalTokens,
+    };
+  }
+
+  return response;
 }
 
 // ============================================================================
